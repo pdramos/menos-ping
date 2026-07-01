@@ -11,6 +11,7 @@ export const TitleBar: React.FC = () => {
   const [isMaximized, setIsMaximized] = useState(false)
 
   useEffect(() => {
+    if (!window.app?.windowControls) return
     window.app.windowControls.isMaximized().then(setIsMaximized)
     return window.app.windowControls.onMaximizeChanged(setIsMaximized)
   }, [])
@@ -41,21 +42,21 @@ export const TitleBar: React.FC = () => {
         <button
           className="w-[46px] h-[46px] bg-transparent border-none text-muted text-sm hover:bg-white/[0.06] hover:text-white transition"
           title="Minimizar"
-          onClick={() => window.app.windowControls.minimize()}
+          onClick={() => window.app.windowControls?.minimize()}
         >
           &#8211;
         </button>
         <button
           className="w-[46px] h-[46px] bg-transparent border-none text-muted text-sm hover:bg-white/[0.06] hover:text-white transition"
           title="Maximizar"
-          onClick={() => window.app.windowControls.maximizeToggle().then(setIsMaximized)}
+          onClick={() => window.app.windowControls?.maximizeToggle().then(setIsMaximized)}
         >
           {isMaximized ? '❒' : '□'}
         </button>
         <button
           className="w-[46px] h-[46px] bg-transparent border-none text-muted text-sm hover:bg-danger hover:text-white transition"
           title="Fechar"
-          onClick={() => window.app.windowControls.close()}
+          onClick={() => window.app.windowControls?.close()}
         >
           &#10005;
         </button>
