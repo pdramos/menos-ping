@@ -94,6 +94,9 @@ async function handleAppReady() {
   application.getComparisonRunner().onStatusChanged((comparison) => {
     forwardToRenderer('comparison:status-changed', comparison)
   })
+  application.getGameRouteAnalyzer().onReportChanged((report) => {
+    forwardToRenderer('routes:report-changed', report)
+  })
 
   await createWindow()
   createMenu()
@@ -320,6 +323,20 @@ ipcMain.handle('comparison:run', async (_event, profile: OptimizationProfile) =>
 
 ipcMain.handle('comparison:get-latest', () => {
   return application.getComparisonRunner().getCurrent()
+})
+
+// --- Game server route analysis ---------------------------------------------
+
+ipcMain.handle('routes:scan', async () => {
+  return application.getGameRouteAnalyzer().scan()
+})
+
+ipcMain.handle('routes:analyze-host', async (_event, host: string) => {
+  return application.getGameRouteAnalyzer().analyzeHost(host)
+})
+
+ipcMain.handle('routes:get-latest', () => {
+  return application.getGameRouteAnalyzer().getLatest()
 })
 
 // --- Logs -------------------------------------------------------------------

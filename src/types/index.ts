@@ -185,6 +185,53 @@ export interface OptimizationComparison {
 }
 
 // ============================================================================
+// Game Server Route Analysis
+// ============================================================================
+
+export interface GameRouteHop {
+  hop: number
+  address: string | null
+  hostname?: string
+  latencyMs: number
+  packetLossPercent: number
+  /** The single hop where the route's latency/loss problem is introduced. */
+  isBottleneck: boolean
+}
+
+export type RouteVerdict = 'healthy' | 'suboptimal' | 'problematic' | 'unknown'
+
+export interface GameServerRoute {
+  serverAddress: string
+  gameName: string | null
+  /** ISP/network owner of the destination, from a real IP-to-ASN lookup. */
+  asn: string | null
+  country: string | null
+  hops: GameRouteHop[]
+  hopCount: number
+  totalLatencyMs: number
+  worstHopLatencyMs: number
+  avgPacketLossPercent: number
+  verdict: RouteVerdict
+  verdictDetail: string
+}
+
+export type RouteScanStatus =
+  | 'idle'
+  | 'detecting'
+  | 'tracing'
+  | 'done'
+  | 'no_games'
+  | 'no_servers'
+  | 'failed'
+
+export interface GameRouteReport {
+  generatedAt: number
+  status: RouteScanStatus
+  routes: GameServerRoute[]
+  message?: string
+}
+
+// ============================================================================
 // System Information
 // ============================================================================
 

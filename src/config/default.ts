@@ -245,7 +245,42 @@ export const GAME_DETECTION_CONFIG = {
     },
     {
       name: 'League of Legends',
-      executables: ['LeagueClientUx.exe', 'LeagueClient.exe'],
+      executables: ['LeagueClientUx.exe', 'LeagueClient.exe', 'League of Legends.exe'],
+      protocol_hints: ['udp', 'tcp'],
+    },
+    {
+      name: 'Rocket League',
+      executables: ['RocketLeague.exe'],
+      protocol_hints: ['udp'],
+    },
+    {
+      name: 'EA SPORTS FC 26',
+      executables: ['FC26.exe', 'FC26_x64.exe'],
+      protocol_hints: ['udp', 'tcp'],
+    },
+    {
+      name: 'EA SPORTS FC 25',
+      executables: ['FC25.exe', 'FC25_x64.exe'],
+      protocol_hints: ['udp', 'tcp'],
+    },
+    {
+      name: 'Apex Legends',
+      executables: ['r5apex.exe'],
+      protocol_hints: ['udp'],
+    },
+    {
+      name: 'Call of Duty',
+      executables: ['cod.exe', 'ModernWarfare.exe', 'BlackOpsColdWar.exe'],
+      protocol_hints: ['udp'],
+    },
+    {
+      name: 'Overwatch 2',
+      executables: ['Overwatch.exe'],
+      protocol_hints: ['udp'],
+    },
+    {
+      name: 'Grand Theft Auto V',
+      executables: ['GTA5.exe', 'GTA5_Enhanced.exe'],
       protocol_hints: ['udp', 'tcp'],
     },
   ],

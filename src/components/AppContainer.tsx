@@ -9,6 +9,7 @@ import NotificationCenter from '@components/NotificationCenter'
 import Analysis from '@pages/Analysis'
 import Optimizations from '@pages/Optimizations'
 import Compare from '@pages/Compare'
+import Routes from '@pages/Routes'
 import Profiles from '@pages/Profiles'
 import Backups from '@pages/Backups'
 import Manual from '@pages/Manual'
@@ -20,6 +21,7 @@ const PAGES: Record<PageName, React.ComponentType<{ onNavigate?: (page: PageName
   analysis: Analysis,
   optimizations: Optimizations,
   compare: Compare,
+  routes: Routes,
   profiles: Profiles,
   backups: Backups,
   manual: Manual,

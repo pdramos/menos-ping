@@ -6,6 +6,7 @@ export type PageName =
   | 'analysis'
   | 'optimizations'
   | 'compare'
+  | 'routes'
   | 'profiles'
   | 'backups'
   | 'manual'
@@ -22,6 +23,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'analysis', label: 'Análise', icon: '📊' },
   { id: 'optimizations', label: 'Otimizações', icon: '⚡' },
   { id: 'compare', label: 'Comparar', icon: '🆚' },
+  { id: 'routes', label: 'Rotas', icon: '🛰️' },
   { id: 'profiles', label: 'Perfis', icon: '🎛️' },
   { id: 'backups', label: 'Backups', icon: '💾' },
   { id: 'manual', label: 'Manuais', icon: '📌' },

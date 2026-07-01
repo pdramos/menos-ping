@@ -8,6 +8,7 @@ import type {
   DetectedGame,
   OptimizationProfile,
   OptimizationComparison,
+  GameRouteReport,
 } from '@types/index'
 import type { BackupEntry, BackupMeta } from '@services/BackupManager'
 import type { ProbeResult } from '@native/probe'
@@ -114,6 +115,13 @@ declare global {
         run: (profile: OptimizationProfile) => Promise<OptimizationComparison>
         getLatest: () => Promise<OptimizationComparison | null>
         onStatusChanged: (callback: (comparison: OptimizationComparison) => void) => () => void
+      }
+
+      routes: {
+        scan: () => Promise<GameRouteReport>
+        analyzeHost: (host: string) => Promise<GameRouteReport>
+        getLatest: () => Promise<GameRouteReport | null>
+        onReportChanged: (callback: (report: GameRouteReport) => void) => () => void
       }
     }
     logger: {

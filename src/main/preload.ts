@@ -85,6 +85,14 @@ contextBridge.exposeInMainWorld('app', {
     onStatusChanged: (callback: (comparison: unknown) => void) =>
       subscribe('comparison:status-changed', callback),
   },
+
+  routes: {
+    scan: () => ipcRenderer.invoke('routes:scan'),
+    analyzeHost: (host: string) => ipcRenderer.invoke('routes:analyze-host', host),
+    getLatest: () => ipcRenderer.invoke('routes:get-latest'),
+    onReportChanged: (callback: (report: unknown) => void) =>
+      subscribe('routes:report-changed', callback),
+  },
 })
 
 contextBridge.exposeInMainWorld('logger', {
