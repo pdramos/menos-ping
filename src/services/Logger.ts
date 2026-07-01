@@ -2,12 +2,18 @@
  * Structured logging service
  */
 
-import fs from 'fs'
-import path from 'path'
 import type { LogEntry } from '@types/index'
 import { LOGGING_CONFIG } from '@config/default'
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
+
+// This module is shared by both the Electron main process (real Node, where
+// file logging is possible) and the sandboxed renderer bundle (a browser
+// context with no 'fs'/'path', pulled in transitively via NotificationManager).
+// Node built-ins are only ever required lazily, and only when actually
+// running in the main process, so importing this file in the renderer never
+// touches them.
+const isMainProcess = typeof window === 'undefined'
 
 function expandLogsDir(): string {
   const dir = LOGGING_CONFIG.logsDir
@@ -18,22 +24,26 @@ function expandLogsDir(): string {
   return dir
 }
 
-const LOG_FILE_PATH = path.join(expandLogsDir(), 'menospingapp.log')
-
 /** Fire-and-forget append, rotating the file once it exceeds the configured size. */
 function appendToLogFile(line: string): void {
+  if (!isMainProcess) return
+
+  const fs = require('fs') as typeof import('fs')
+  const path = require('path') as typeof import('path')
+  const logFilePath = path.join(expandLogsDir(), 'menospingapp.log')
+
   fs.promises
-    .mkdir(path.dirname(LOG_FILE_PATH), { recursive: true })
+    .mkdir(path.dirname(logFilePath), { recursive: true })
     .then(async () => {
       try {
-        const stat = await fs.promises.stat(LOG_FILE_PATH)
+        const stat = await fs.promises.stat(logFilePath)
         if (stat.size > LOGGING_CONFIG.maxFileSize) {
-          await fs.promises.rename(LOG_FILE_PATH, `${LOG_FILE_PATH}.1`)
+          await fs.promises.rename(logFilePath, `${logFilePath}.1`)
         }
       } catch {
         // File doesn't exist yet - nothing to rotate.
       }
-      await fs.promises.appendFile(LOG_FILE_PATH, line)
+      await fs.promises.appendFile(logFilePath, line)
     })
     .catch(() => {
       // Logging must never crash the app it's instrumenting.
