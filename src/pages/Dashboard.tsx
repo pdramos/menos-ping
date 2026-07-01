@@ -6,29 +6,42 @@ import React, { useState, useEffect } from 'react'
 import Layout from '@components/Layout'
 import MetricCard from '@components/MetricCard'
 import useNetworkStatus from '@hooks/useNetworkStatus'
-import { getApplication } from '@main/Application'
+import useDetectedGames from '@hooks/useDetectedGames'
+
+/** Compare the two halves of recent latency history to derive a real trend. */
+function computeTrend(history: number[]): 'up' | 'down' | 'stable' {
+  if (history.length < 4) return 'stable'
+
+  const mid = Math.floor(history.length / 2)
+  const firstHalfAvg = history.slice(0, mid).reduce((a, b) => a + b, 0) / mid
+  const secondHalfAvg = history.slice(mid).reduce((a, b) => a + b, 0) / (history.length - mid)
+
+  const delta = secondHalfAvg - firstHalfAvg
+  if (Math.abs(delta) < firstHalfAvg * 0.05) return 'stable' // within 5% noise band
+  return delta > 0 ? 'up' : 'down'
+}
 
 export const Dashboard: React.FC = () => {
   const { quality, latency, jitter, packetLoss } = useNetworkStatus()
-  const [detectedGames, setDetectedGames] = useState<number>(0)
+  const detectedGames = useDetectedGames()
   const [uptime, setUptime] = useState<number>(0)
+  const [latencyTrend, setLatencyTrend] = useState<'up' | 'down' | 'stable'>('stable')
 
+  // Poll real latency history to derive an actual trend (no randomness)
   useEffect(() => {
-    const app = getApplication()
-    const detector = app.getGameDetector()
+    let cancelled = false
 
-    const updateGamesCount = () => {
-      setDetectedGames(detector.getDetectedGames().length)
+    const refreshTrend = () => {
+      window.app.network.getLatencyHistory(20).then((history) => {
+        if (!cancelled) setLatencyTrend(computeTrend(history))
+      })
     }
 
-    updateGamesCount()
-
-    const unsubscribe = detector.onGameEvent(() => {
-      updateGamesCount()
-    })
-
+    refreshTrend()
+    const interval = setInterval(refreshTrend, 5000)
     return () => {
-      unsubscribe()
+      cancelled = true
+      clearInterval(interval)
     }
   }, [])
 
@@ -106,9 +119,7 @@ export const Dashboard: React.FC = () => {
                         ? 'poor'
                         : 'critical'
               }
-              trend={
-                Math.random() > 0.5 ? ('stable' as const) : ('down' as const)
-              }
+              trend={latencyTrend}
             />
 
             <MetricCard
@@ -135,8 +146,8 @@ export const Dashboard: React.FC = () => {
 
             <MetricCard
               title="Active Games"
-              value={detectedGames}
-              status={detectedGames > 0 ? 'good' : 'fair'}
+              value={detectedGames.length}
+              status={detectedGames.length > 0 ? 'good' : 'fair'}
             />
           </div>
 
@@ -164,10 +175,9 @@ export const Dashboard: React.FC = () => {
           <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
             <h3 className="text-lg font-bold mb-4">Recent Activity</h3>
             <div className="space-y-2 text-sm text-gray-400">
-              <p>✓ Network monitor active</p>
-              <p>✓ Game detector running</p>
-              <p>✓ Optimizations applied</p>
-              <p>✓ Last update: Just now</p>
+              <p>{quality ? '✓' : '…'} Network monitor {quality ? 'active' : 'starting'}</p>
+              <p>✓ Game detector running ({detectedGames.length} detected)</p>
+              <p>{quality?.last_update ? `✓ Last update: ${new Date(quality.last_update).toLocaleTimeString()}` : '… Waiting for first measurement'}</p>
             </div>
           </div>
         </div>

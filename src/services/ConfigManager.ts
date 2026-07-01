@@ -3,6 +3,8 @@
  * Handles loading, saving, and validating application configuration
  */
 
+import fs from 'fs'
+import path from 'path'
 import type { OptimizationProfile, GameProfile } from '@types/index'
 import { DEFAULT_OPTIMIZATION_PROFILE } from '@config/default'
 import { getLogger } from '@services/Logger'
@@ -78,9 +80,25 @@ class ConfigManager {
 
   private loadConfig(): void {
     try {
-      // TODO: Implement actual file loading
-      // For now, use default config
-      logger.info('Config loaded from', this.configPath)
+      if (!fs.existsSync(this.configPath)) {
+        logger.info(`No existing config at ${this.configPath}, using defaults`)
+        this.config = this.getDefaultConfig()
+        return
+      }
+
+      const raw = fs.readFileSync(this.configPath, 'utf-8')
+      const loaded = JSON.parse(raw) as Partial<AppConfig>
+
+      // Merge over defaults so newly-added fields in a future version don't
+      // crash on an older config file that predates them.
+      this.config = {
+        ...this.getDefaultConfig(),
+        ...loaded,
+        ui: { ...this.getDefaultConfig().ui, ...loaded.ui },
+        telemetry: { ...this.getDefaultConfig().telemetry, ...loaded.telemetry },
+      }
+
+      logger.info(`Config loaded from ${this.configPath}`)
     } catch (error) {
       logger.warn('Failed to load config, using defaults', error)
       this.config = this.getDefaultConfig()
@@ -89,9 +107,10 @@ class ConfigManager {
 
   async saveConfig(): Promise<void> {
     try {
-      // TODO: Implement actual file saving
-      logger.info('Config saved to', this.configPath)
+      await fs.promises.mkdir(path.dirname(this.configPath), { recursive: true })
+      await fs.promises.writeFile(this.configPath, JSON.stringify(this.config, null, 2), 'utf-8')
       this.isDirty = false
+      logger.info(`Config saved to ${this.configPath}`)
     } catch (error) {
       logger.error('Failed to save config', error)
       throw error

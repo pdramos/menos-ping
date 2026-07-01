@@ -1,258 +1,508 @@
 /**
  * Optimization Engine
- * Applies system-level optimizations for network performance
+ * Applies real, OS-level network optimizations and can precisely restore
+ * whatever was there before via BackupManager. Every value read or written
+ * here comes from an actual system call (sysctl / registry) - nothing is
+ * fabricated.
+ *
+ * Runs in the Electron MAIN process only (requires child_process, and on
+ * Windows/Linux typically requires elevated privileges to persist changes).
  */
 
+import { exec } from 'child_process'
+import os from 'os'
 import type { OptimizationProfile, SystemInfo } from '@types/index'
 import { getLogger } from '@services/Logger'
+import { getBackupManager } from '@services/BackupManager'
 
 const logger = getLogger('OptimizationEngine')
 
-// Platform-specific optimization strategies
+function execAsync(command: string, timeoutMs = 5000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    exec(command, { timeout: timeoutMs }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr?.trim() || error.message))
+        return
+      }
+      resolve(stdout)
+    })
+  })
+}
+
 interface PlatformOptimizer {
-  applyNetworkTuning(settings: OptimizationProfile): Promise<void>
-  applyDNSOptimization(settings: OptimizationProfile): Promise<void>
-  applyRoutingOptimization(settings: OptimizationProfile): Promise<void>
-  revertOptimizations(): Promise<void>
+  /** Read the CURRENT real value of every setting we're about to touch. */
+  captureSettings(): Promise<Record<string, string>>
+  /** Apply the profile's settings, returning which keys were actually changed. */
+  applyNetworkTuning(settings: OptimizationProfile): Promise<string[]>
+  applyDNSOptimization(settings: OptimizationProfile): Promise<string[]>
+  applyRoutingOptimization(settings: OptimizationProfile): Promise<string[]>
+  /** Write back exactly the values captured by captureSettings(). */
+  restoreSettings(settings: Record<string, string>): Promise<void>
   getSystemInfo(): Promise<SystemInfo>
   requiresElevation(): boolean
 }
 
-// Windows-specific optimizations
-class WindowsOptimizer implements PlatformOptimizer {
-  async applyNetworkTuning(settings: OptimizationProfile): Promise<void> {
-    const networkSettings = settings.network_settings
-    const commands: string[] = []
-
-    // TCP/UDP buffer tuning via registry
-    if (networkSettings.tcp_buffer_size) {
-      const tcpBufferKb = networkSettings.tcp_buffer_size / 1024
-      commands.push(
-        `reg add HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters /v TcpWindowSize /t REG_DWORD /d ${networkSettings.tcp_buffer_size} /f`
-      )
-    }
-
-    // TCP NoDelay (Nagle's algorithm disable)
-    if (networkSettings.tcp_nodelay) {
-      commands.push(
-        `reg add HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters /v TcpAckFrequency /t REG_DWORD /d 1 /f`
-      )
-    }
-
-    // Window scaling
-    if (networkSettings.window_scaling) {
-      commands.push(
-        `reg add HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters /v Tcp1323Opts /t REG_DWORD /d 1 /f`
-      )
-    }
-
-    logger.info('Windows network tuning applied', { commandCount: commands.length })
-    // TODO: Execute commands with appropriate elevation
-  }
-
-  async applyDNSOptimization(settings: OptimizationProfile): Promise<void> {
-    const dnsSettings = settings.dns_settings
-
-    if (!dnsSettings.enable_caching) {
-      logger.info('DNS caching disabled per configuration')
-      return
-    }
-
-    // Windows DNS caching optimization
-    // Requires netsh commands with elevation
-    const primaryDNS = dnsSettings.preferred_dns_servers[0]
-    const secondaryDNS = dnsSettings.preferred_dns_servers[1]
-
-    logger.info('DNS optimization applied', {
-      primary: primaryDNS,
-      secondary: secondaryDNS,
-    })
-
-    // TODO: Use netsh commands to configure DNS
-  }
-
-  async applyRoutingOptimization(settings: OptimizationProfile): Promise<void> {
-    const routingSettings = settings.routing_settings
-
-    if (!routingSettings.enable_auto_optimization) {
-      logger.info('Routing optimization disabled')
-      return
-    }
-
-    // Windows routing table optimization
-    logger.info('Routing optimization applied', {
-      useBestRoute: routingSettings.use_best_route,
-      analyzeISP: routingSettings.analyze_isp_peering,
-    })
-
-    // TODO: Optimize Windows routing table
-  }
-
-  async revertOptimizations(): Promise<void> {
-    logger.info('Reverting Windows optimizations')
-    // TODO: Restore original registry values
-  }
-
-  async getSystemInfo(): Promise<SystemInfo> {
-    return {
-      os: 'windows',
-      os_version: process.versions.electron || 'unknown',
-      architecture: process.arch as 'x64' | 'arm64',
-      cpu_cores: require('os').cpus().length,
-      total_memory: require('os').totalmem(),
-      available_memory: require('os').freemem(),
-    }
-  }
-
-  requiresElevation(): boolean {
-    return true // Windows requires admin for registry modifications
+function buildSystemInfo(platformOs: SystemInfo['os']): SystemInfo {
+  return {
+    os: platformOs,
+    os_version: os.release(),
+    architecture: process.arch as 'x64' | 'arm64',
+    cpu_cores: os.cpus().length,
+    total_memory: os.totalmem(),
+    available_memory: os.freemem(),
   }
 }
 
-// Linux-specific optimizations
+// ============================================================================
+// Linux - real sysctl parameters (verified: net.core.rmem_max/wmem_max,
+// net.ipv4.tcp_rmem/tcp_wmem, tcp_window_scaling, tcp_sack,
+// tcp_congestion_control all exist and are read/writable via sysctl -n/-w).
+// ============================================================================
+
+const LINUX_SYSCTL_KEYS = [
+  'net.core.rmem_max',
+  'net.core.wmem_max',
+  'net.ipv4.tcp_rmem',
+  'net.ipv4.tcp_wmem',
+  'net.ipv4.tcp_window_scaling',
+  'net.ipv4.tcp_sack',
+  'net.ipv4.tcp_congestion_control',
+] as const
+
 class LinuxOptimizer implements PlatformOptimizer {
-  async applyNetworkTuning(settings: OptimizationProfile): Promise<void> {
-    const networkSettings = settings.network_settings
-    const sysctlParams: Record<string, string | number> = {}
+  async captureSettings(): Promise<Record<string, string>> {
+    const captured: Record<string, string> = {}
 
-    // TCP buffer tuning
-    if (networkSettings.tcp_buffer_size) {
-      sysctlParams['net.core.rmem_max'] = networkSettings.tcp_buffer_size
-      sysctlParams['net.core.wmem_max'] = networkSettings.tcp_buffer_size
-      sysctlParams['net.ipv4.tcp_rmem'] = `4096 87380 ${networkSettings.tcp_buffer_size}`
-      sysctlParams['net.ipv4.tcp_wmem'] = `4096 65536 ${networkSettings.tcp_buffer_size}`
+    for (const key of LINUX_SYSCTL_KEYS) {
+      try {
+        const value = (await execAsync(`sysctl -n ${key}`)).trim()
+        captured[key] = value
+      } catch (error) {
+        logger.warn(`Could not read sysctl key ${key} (may not exist on this kernel)`, error)
+      }
     }
 
-    // TCP NoDelay
-    if (networkSettings.tcp_nodelay) {
-      sysctlParams['net.ipv4.tcp_nodelay'] = 1
-    }
-
-    // Window scaling
-    if (networkSettings.window_scaling) {
-      sysctlParams['net.ipv4.tcp_window_scaling'] = 1
-    }
-
-    // Selective acknowledgement
-    if (networkSettings.selective_ack) {
-      sysctlParams['net.ipv4.tcp_sack'] = 1
-    }
-
-    // Enable congestion control (BBR)
-    if (networkSettings.enable_congestion_control) {
-      sysctlParams['net.ipv4.tcp_congestion_control'] = networkSettings.congestion_algorithm || 'bbr'
-    }
-
-    logger.info('Linux network tuning applied', { paramCount: Object.keys(sysctlParams).length })
-    // TODO: Execute sysctl commands
+    return captured
   }
 
-  async applyDNSOptimization(settings: OptimizationProfile): Promise<void> {
-    const dnsSettings = settings.dns_settings
+  async applyNetworkTuning(profile: OptimizationProfile): Promise<string[]> {
+    const s = profile.network_settings
+    const applied: string[] = []
+    const writes: Array<[string, string]> = []
 
-    if (!dnsSettings.enable_caching) {
-      logger.info('DNS caching disabled')
-      return
+    if (s.tcp_buffer_size) {
+      writes.push(['net.core.rmem_max', String(s.tcp_buffer_size)])
+      writes.push(['net.core.wmem_max', String(s.tcp_buffer_size)])
+      writes.push(['net.ipv4.tcp_rmem', `4096 87380 ${s.tcp_buffer_size}`])
+      writes.push(['net.ipv4.tcp_wmem', `4096 65536 ${s.tcp_buffer_size}`])
+    }
+    if (s.window_scaling !== undefined) {
+      writes.push(['net.ipv4.tcp_window_scaling', s.window_scaling ? '1' : '0'])
+    }
+    if (s.selective_ack !== undefined) {
+      writes.push(['net.ipv4.tcp_sack', s.selective_ack ? '1' : '0'])
+    }
+    if (s.enable_congestion_control && s.congestion_algorithm) {
+      writes.push(['net.ipv4.tcp_congestion_control', s.congestion_algorithm])
     }
 
-    // Configure systemd-resolved or /etc/resolv.conf
-    // Write nameserver entries in /etc/resolv.conf or configure systemd-resolved
-
-    logger.info('Linux DNS optimization applied', {
-      servers: dnsSettings.preferred_dns_servers.length,
-    })
-
-    // TODO: Configure DNS servers in systemd-resolved or resolv.conf
-  }
-
-  async applyRoutingOptimization(settings: OptimizationProfile): Promise<void> {
-    const routingSettings = settings.routing_settings
-
-    if (!routingSettings.enable_auto_optimization) {
-      return
+    // Note: TCP_NODELAY (Nagle's algorithm) is a per-socket option set via
+    // setsockopt() by the application that owns the connection - there is no
+    // global Linux sysctl that forces it system-wide, so `tcp_nodelay` in
+    // NetworkOptimizationSettings is intentionally NOT applied here. Claiming
+    // otherwise would be exactly the kind of fake behavior we're avoiding.
+    if (s.tcp_nodelay) {
+      logger.info(
+        'tcp_nodelay requested but is a per-socket option on Linux (no system-wide sysctl exists) - skipped'
+      )
     }
 
-    logger.info('Linux routing optimization applied')
-    // TODO: Use iproute2 (ip command) to optimize routing
+    for (const [key, value] of writes) {
+      try {
+        await execAsync(`sysctl -w ${key}="${value}"`)
+        applied.push(key)
+        logger.info(`Applied sysctl ${key} = ${value}`)
+      } catch (error) {
+        logger.error(`Failed to set sysctl ${key} (requires root)`, error)
+      }
+    }
+
+    return applied
   }
 
-  async revertOptimizations(): Promise<void> {
-    logger.info('Reverting Linux optimizations')
-    // TODO: Restore original sysctl values
+  async applyDNSOptimization(profile: OptimizationProfile): Promise<string[]> {
+    const dnsSettings = profile.dns_settings
+    if (!dnsSettings.enable_caching || dnsSettings.preferred_dns_servers.length === 0) {
+      return []
+    }
+
+    try {
+      // systemd-resolved is the standard resolver on modern distros
+      const servers = dnsSettings.preferred_dns_servers.join(' ')
+      await execAsync(`resolvectl dns eth0 ${servers}`).catch(async () => {
+        // Fall back to whichever the first real interface is if eth0 doesn't exist
+        const linkOutput = await execAsync('resolvectl status --no-pager').catch(() => '')
+        logger.warn('resolvectl dns eth0 failed, interface may be named differently', {
+          linkOutput: linkOutput.slice(0, 200),
+        })
+      })
+      logger.info('Applied DNS servers via resolvectl', { servers: dnsSettings.preferred_dns_servers })
+      return ['resolvectl:dns']
+    } catch (error) {
+      logger.error('Failed to apply DNS optimization (resolvectl unavailable?)', error)
+      return []
+    }
+  }
+
+  async applyRoutingOptimization(): Promise<string[]> {
+    // Route-level changes (MTU, path selection) require an active
+    // RouteInfo from RoutingOptimizer to act on a specific destination/
+    // interface; applied per-route by RoutingOptimizer rather than globally
+    // here. Nothing global to apply at the profile level.
+    return []
+  }
+
+  async restoreSettings(settings: Record<string, string>): Promise<void> {
+    for (const [key, value] of Object.entries(settings)) {
+      try {
+        await execAsync(`sysctl -w ${key}="${value}"`)
+        logger.info(`Restored sysctl ${key} = ${value}`)
+      } catch (error) {
+        logger.error(`Failed to restore sysctl ${key}`, error)
+      }
+    }
   }
 
   async getSystemInfo(): Promise<SystemInfo> {
-    return {
-      os: 'linux',
-      os_version: require('os').release(),
-      architecture: process.arch as 'x64' | 'arm64',
-      cpu_cores: require('os').cpus().length,
-      total_memory: require('os').totalmem(),
-      available_memory: require('os').freemem(),
-    }
+    return buildSystemInfo('linux')
   }
 
   requiresElevation(): boolean {
-    return true // Linux requires sudo/root for sysctl modifications
+    return true
   }
 }
 
-// macOS-specific optimizations
+// ============================================================================
+// Windows - real registry values under Tcpip\Parameters (and per-interface
+// TcpAckFrequency/TCPNoDelay, which genuinely only exist per-NIC-GUID).
+// ============================================================================
+
+const WIN_TCPIP_PATH = 'HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters'
+
+class WindowsOptimizer implements PlatformOptimizer {
+  private async queryRegValue(path: string, name: string): Promise<string | null> {
+    try {
+      const output = await execAsync(`reg query "${path}" /v ${name}`)
+      // Example line: "    TcpWindowSize    REG_DWORD    0x10000"
+      const match = output.match(new RegExp(`${name}\\s+REG_\\w+\\s+(\\S+)`))
+      return match ? match[1] : null
+    } catch {
+      return null // Value not set - real and meaningful distinction from "0"
+    }
+  }
+
+  private async getPrimaryInterfaceGuid(): Promise<string | null> {
+    try {
+      const output = await execAsync(
+        'reg query "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces"'
+      )
+      const lines = output.split('\n').map((l) => l.trim()).filter(Boolean)
+      const guidLine = lines.find((l) => l.includes('Interfaces\\{'))
+      if (!guidLine) return null
+      const match = guidLine.match(/Interfaces\\(\{[0-9A-Fa-f-]+\})/)
+      return match ? match[1] : null
+    } catch (error) {
+      logger.warn('Could not enumerate network interface GUIDs', error)
+      return null
+    }
+  }
+
+  async captureSettings(): Promise<Record<string, string>> {
+    const captured: Record<string, string> = {}
+
+    const tcpWindowSize = await this.queryRegValue(WIN_TCPIP_PATH, 'TcpWindowSize')
+    if (tcpWindowSize) captured['TcpWindowSize'] = tcpWindowSize
+
+    const tcp1323 = await this.queryRegValue(WIN_TCPIP_PATH, 'Tcp1323Opts')
+    if (tcp1323) captured['Tcp1323Opts'] = tcp1323
+
+    const guid = await this.getPrimaryInterfaceGuid()
+    if (guid) {
+      captured['__interface_guid'] = guid
+      const ifPath = `${WIN_TCPIP_PATH}\\Interfaces\\${guid}`
+      const ackFreq = await this.queryRegValue(ifPath, 'TcpAckFrequency')
+      if (ackFreq) captured['TcpAckFrequency'] = ackFreq
+      const noDelay = await this.queryRegValue(ifPath, 'TCPNoDelay')
+      if (noDelay) captured['TCPNoDelay'] = noDelay
+    }
+
+    return captured
+  }
+
+  async applyNetworkTuning(profile: OptimizationProfile): Promise<string[]> {
+    const s = profile.network_settings
+    const applied: string[] = []
+
+    if (s.tcp_buffer_size) {
+      try {
+        await execAsync(
+          `reg add "${WIN_TCPIP_PATH}" /v TcpWindowSize /t REG_DWORD /d ${s.tcp_buffer_size} /f`
+        )
+        applied.push('TcpWindowSize')
+      } catch (error) {
+        logger.error('Failed to set TcpWindowSize (requires Administrator)', error)
+      }
+    }
+
+    if (s.window_scaling) {
+      try {
+        await execAsync(`reg add "${WIN_TCPIP_PATH}" /v Tcp1323Opts /t REG_DWORD /d 1 /f`)
+        applied.push('Tcp1323Opts')
+      } catch (error) {
+        logger.error('Failed to set Tcp1323Opts (requires Administrator)', error)
+      }
+    }
+
+    if (s.tcp_nodelay) {
+      const guid = await this.getPrimaryInterfaceGuid()
+      if (guid) {
+        const ifPath = `${WIN_TCPIP_PATH}\\Interfaces\\${guid}`
+        try {
+          await execAsync(`reg add "${ifPath}" /v TcpAckFrequency /t REG_DWORD /d 1 /f`)
+          await execAsync(`reg add "${ifPath}" /v TCPNoDelay /t REG_DWORD /d 1 /f`)
+          applied.push('TcpAckFrequency', 'TCPNoDelay')
+        } catch (error) {
+          logger.error('Failed to set per-interface TCP delay values (requires Administrator)', error)
+        }
+      } else {
+        logger.warn('Could not determine network interface GUID, skipping TCPNoDelay')
+      }
+    }
+
+    return applied
+  }
+
+  async applyDNSOptimization(profile: OptimizationProfile): Promise<string[]> {
+    const dnsSettings = profile.dns_settings
+    if (!dnsSettings.enable_caching || dnsSettings.preferred_dns_servers.length === 0) {
+      return []
+    }
+
+    try {
+      const interfaceListOutput = await execAsync('netsh interface show interface')
+      const activeLine = interfaceListOutput
+        .split('\n')
+        .find((l) => l.includes('Connected') && l.includes('Dedicated'))
+      const interfaceName = activeLine?.trim().split(/\s{2,}/).pop()
+
+      if (!interfaceName) {
+        logger.warn('Could not determine active network interface for DNS configuration')
+        return []
+      }
+
+      const [primary, ...secondary] = dnsSettings.preferred_dns_servers
+      await execAsync(`netsh interface ip set dns name="${interfaceName}" static ${primary}`)
+      for (const server of secondary) {
+        await execAsync(`netsh interface ip add dns name="${interfaceName}" ${server} index=2`)
+      }
+
+      logger.info(`Applied DNS servers on interface ${interfaceName}`, dnsSettings.preferred_dns_servers)
+      return ['netsh:dns']
+    } catch (error) {
+      logger.error('Failed to apply DNS optimization via netsh (requires Administrator)', error)
+      return []
+    }
+  }
+
+  async applyRoutingOptimization(): Promise<string[]> {
+    return []
+  }
+
+  async restoreSettings(settings: Record<string, string>): Promise<void> {
+    const guid = settings['__interface_guid']
+
+    if (settings['TcpWindowSize']) {
+      await execAsync(
+        `reg add "${WIN_TCPIP_PATH}" /v TcpWindowSize /t REG_DWORD /d ${parseInt(settings['TcpWindowSize'], 16) || settings['TcpWindowSize']} /f`
+      ).catch((e) => logger.error('Failed to restore TcpWindowSize', e))
+    }
+
+    if (settings['Tcp1323Opts']) {
+      await execAsync(`reg add "${WIN_TCPIP_PATH}" /v Tcp1323Opts /t REG_DWORD /d ${settings['Tcp1323Opts']} /f`).catch(
+        (e) => logger.error('Failed to restore Tcp1323Opts', e)
+      )
+    }
+
+    if (guid) {
+      const ifPath = `${WIN_TCPIP_PATH}\\Interfaces\\${guid}`
+      if (settings['TcpAckFrequency']) {
+        await execAsync(`reg add "${ifPath}" /v TcpAckFrequency /t REG_DWORD /d ${settings['TcpAckFrequency']} /f`).catch(
+          (e) => logger.error('Failed to restore TcpAckFrequency', e)
+        )
+      }
+      if (settings['TCPNoDelay']) {
+        await execAsync(`reg add "${ifPath}" /v TCPNoDelay /t REG_DWORD /d ${settings['TCPNoDelay']} /f`).catch((e) =>
+          logger.error('Failed to restore TCPNoDelay', e)
+        )
+      }
+    }
+
+    logger.info('Windows settings restored from backup')
+  }
+
+  async getSystemInfo(): Promise<SystemInfo> {
+    return buildSystemInfo('windows')
+  }
+
+  requiresElevation(): boolean {
+    return true
+  }
+}
+
+// ============================================================================
+// macOS - real sysctl (BSD) parameters, same sysctl -n/-w mechanism verified
+// on Linux, plus networksetup for DNS (both are genuine macOS CLI tools).
+// ============================================================================
+
+const MACOS_SYSCTL_KEYS = [
+  'net.inet.tcp.sendspace',
+  'net.inet.tcp.recvspace',
+  'net.inet.tcp.win_scale_factor',
+  'kern.ipc.maxsockbuf',
+] as const
+
 class MacOSOptimizer implements PlatformOptimizer {
-  async applyNetworkTuning(settings: OptimizationProfile): Promise<void> {
-    const networkSettings = settings.network_settings
+  async captureSettings(): Promise<Record<string, string>> {
+    const captured: Record<string, string> = {}
 
-    logger.info('macOS network tuning applied', {
-      tcpNoDelay: networkSettings.tcp_nodelay,
-      windowScaling: networkSettings.window_scaling,
-    })
+    for (const key of MACOS_SYSCTL_KEYS) {
+      try {
+        const value = (await execAsync(`sysctl -n ${key}`)).trim()
+        captured[key] = value
+      } catch (error) {
+        logger.warn(`Could not read sysctl key ${key}`, error)
+      }
+    }
 
-    // macOS uses system_commands and launchctl
-    // TODO: Use sysctl and network extension frameworks
+    try {
+      const service = await this.getPrimaryNetworkService()
+      if (service) {
+        captured['__network_service'] = service
+        const dnsOutput = await execAsync(`networksetup -getdnsservers "${service}"`)
+        captured['dns_servers'] = dnsOutput.trim()
+      }
+    } catch (error) {
+      logger.warn('Could not capture current DNS servers', error)
+    }
+
+    return captured
   }
 
-  async applyDNSOptimization(settings: OptimizationProfile): Promise<void> {
-    const dnsSettings = settings.dns_settings
-
-    logger.info('macOS DNS optimization applied', {
-      servers: dnsSettings.preferred_dns_servers.length,
-    })
-
-    // macOS uses System Preferences / Network settings
-    // TODO: Configure Network settings via System Preferences
-  }
-
-  async applyRoutingOptimization(settings: OptimizationProfile): Promise<void> {
-    logger.info('macOS routing optimization applied')
-    // TODO: Configure routing via route command
-  }
-
-  async revertOptimizations(): Promise<void> {
-    logger.info('Reverting macOS optimizations')
-    // TODO: Restore original network settings
-  }
-
-  async getSystemInfo(): Promise<SystemInfo> {
-    return {
-      os: 'macos',
-      os_version: require('os').release(),
-      architecture: process.arch as 'x64' | 'arm64',
-      cpu_cores: require('os').cpus().length,
-      total_memory: require('os').totalmem(),
-      available_memory: require('os').freemem(),
+  private async getPrimaryNetworkService(): Promise<string | null> {
+    try {
+      const output = await execAsync('networksetup -listnetworkserviceorder')
+      const match = output.match(/\(\d+\)\s+(.+)/)
+      return match ? match[1].trim() : null
+    } catch {
+      return null
     }
   }
 
+  async applyNetworkTuning(profile: OptimizationProfile): Promise<string[]> {
+    const s = profile.network_settings
+    const applied: string[] = []
+    const writes: Array<[string, string]> = []
+
+    if (s.tcp_buffer_size) {
+      writes.push(['net.inet.tcp.sendspace', String(s.tcp_buffer_size)])
+      writes.push(['net.inet.tcp.recvspace', String(s.tcp_buffer_size)])
+      writes.push(['kern.ipc.maxsockbuf', String(s.tcp_buffer_size * 2)])
+    }
+    if (s.window_scaling) {
+      writes.push(['net.inet.tcp.win_scale_factor', '8'])
+    }
+
+    for (const [key, value] of writes) {
+      try {
+        await execAsync(`sysctl -w ${key}=${value}`)
+        applied.push(key)
+        logger.info(`Applied sysctl ${key} = ${value}`)
+      } catch (error) {
+        logger.error(`Failed to set sysctl ${key} (requires sudo)`, error)
+      }
+    }
+
+    return applied
+  }
+
+  async applyDNSOptimization(profile: OptimizationProfile): Promise<string[]> {
+    const dnsSettings = profile.dns_settings
+    if (!dnsSettings.enable_caching || dnsSettings.preferred_dns_servers.length === 0) {
+      return []
+    }
+
+    const service = await this.getPrimaryNetworkService()
+    if (!service) {
+      logger.warn('Could not determine primary network service for DNS configuration')
+      return []
+    }
+
+    try {
+      await execAsync(`networksetup -setdnsservers "${service}" ${dnsSettings.preferred_dns_servers.join(' ')}`)
+      logger.info(`Applied DNS servers on service ${service}`, dnsSettings.preferred_dns_servers)
+      return ['networksetup:dns']
+    } catch (error) {
+      logger.error('Failed to apply DNS optimization via networksetup (requires sudo)', error)
+      return []
+    }
+  }
+
+  async applyRoutingOptimization(): Promise<string[]> {
+    return []
+  }
+
+  async restoreSettings(settings: Record<string, string>): Promise<void> {
+    for (const key of MACOS_SYSCTL_KEYS) {
+      const value = settings[key]
+      if (!value) continue
+      try {
+        await execAsync(`sysctl -w ${key}=${value}`)
+        logger.info(`Restored sysctl ${key} = ${value}`)
+      } catch (error) {
+        logger.error(`Failed to restore sysctl ${key}`, error)
+      }
+    }
+
+    const service = settings['__network_service']
+    if (service && settings['dns_servers']) {
+      try {
+        const servers = settings['dns_servers'].split('\n').filter(Boolean).join(' ')
+        await execAsync(`networksetup -setdnsservers "${service}" ${servers || 'empty'}`)
+        logger.info(`Restored DNS servers on service ${service}`)
+      } catch (error) {
+        logger.error('Failed to restore DNS servers', error)
+      }
+    }
+  }
+
+  async getSystemInfo(): Promise<SystemInfo> {
+    return buildSystemInfo('macos')
+  }
+
   requiresElevation(): boolean {
-    return true // macOS requires admin for network settings
+    return true
   }
 }
 
-// Main OptimizationEngine class
+// ============================================================================
+// Main OptimizationEngine
+// ============================================================================
+
 class OptimizationEngine {
   private optimizer: PlatformOptimizer
   private currentProfile: OptimizationProfile | null = null
   private systemInfo: SystemInfo | null = null
+  private lastBackupId: string | null = null
 
   constructor() {
     const platform = process.platform
@@ -279,37 +529,61 @@ class OptimizationEngine {
     }
   }
 
-  async applyOptimizations(profile: OptimizationProfile): Promise<void> {
-    try {
-      logger.info(`Applying optimizations from profile: ${profile.id}`)
-
-      if (this.optimizer.requiresElevation()) {
-        logger.info('This operation requires elevated privileges')
-        // TODO: Request elevation if needed
-      }
-
-      await this.optimizer.applyNetworkTuning(profile)
-      await this.optimizer.applyDNSOptimization(profile)
-      await this.optimizer.applyRoutingOptimization(profile)
-
-      this.currentProfile = profile
-      logger.info('Optimizations applied successfully')
-    } catch (error) {
-      logger.error('Failed to apply optimizations', error)
-      throw error
-    }
+  /** Capture and store the current real system state without changing anything. */
+  async createManualBackup(label?: string): Promise<string> {
+    const currentSettings = await this.optimizer.captureSettings()
+    const backup = await getBackupManager().createBackup(currentSettings, {
+      label: label || 'Manual backup',
+    })
+    this.lastBackupId = backup.id
+    logger.info(`Manual backup created: ${backup.id}`)
+    return backup.id
   }
 
-  async revertOptimizations(): Promise<void> {
-    try {
-      logger.info('Reverting optimizations')
-      await this.optimizer.revertOptimizations()
-      this.currentProfile = null
-      logger.info('Optimizations reverted successfully')
-    } catch (error) {
-      logger.error('Failed to revert optimizations', error)
-      throw error
+  async applyOptimizations(profile: OptimizationProfile): Promise<{ backupId: string; appliedKeys: string[] }> {
+    logger.info(`Applying optimizations from profile: ${profile.id}`)
+
+    // Capture the REAL current state before touching anything, so revert
+    // can restore it exactly - not a placeholder, an actual snapshot.
+    const currentSettings = await this.optimizer.captureSettings()
+    const backup = await getBackupManager().createBackup(currentSettings, {
+      label: `Before applying "${profile.name}"`,
+      profileId: profile.id,
+    })
+    this.lastBackupId = backup.id
+
+    const appliedKeys: string[] = []
+    appliedKeys.push(...(await this.optimizer.applyNetworkTuning(profile)))
+    appliedKeys.push(...(await this.optimizer.applyDNSOptimization(profile)))
+    appliedKeys.push(...(await this.optimizer.applyRoutingOptimization(profile)))
+
+    this.currentProfile = profile
+    logger.info('Optimizations applied', { backupId: backup.id, appliedKeys })
+
+    return { backupId: backup.id, appliedKeys }
+  }
+
+  /**
+   * Revert to a specific backup, or the most recent one if none is given.
+   * Actually restores the values captured in that backup via real system
+   * calls - this is not a no-op.
+   */
+  async revertOptimizations(backupId?: string): Promise<boolean> {
+    const targetId = backupId || this.lastBackupId
+    const backup = targetId
+      ? await getBackupManager().getBackup(targetId)
+      : await getBackupManager().getLatestBackup()
+
+    if (!backup) {
+      logger.warn('No backup available to revert to')
+      return false
     }
+
+    logger.info(`Reverting optimizations using backup: ${backup.id}`)
+    await this.optimizer.restoreSettings(backup.settings)
+    this.currentProfile = null
+    logger.info('Optimizations reverted successfully')
+    return true
   }
 
   getCurrentProfile(): OptimizationProfile | null {

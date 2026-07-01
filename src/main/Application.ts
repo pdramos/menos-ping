@@ -7,7 +7,8 @@ import NetworkMonitor from '@services/NetworkMonitor'
 import GameDetector from '@services/GameDetector'
 import ConfigManager from '@services/ConfigManager'
 import OptimizationEngine from '@services/OptimizationEngine'
-import { getLogger, createLogger } from '@services/Logger'
+import RoutingOptimizer from '@services/RoutingOptimizer'
+import { getLogger } from '@services/Logger'
 
 const logger = getLogger('Application')
 
@@ -16,6 +17,7 @@ class Application {
   private gameDetector: GameDetector
   private configManager: ConfigManager
   private optimizationEngine: OptimizationEngine
+  private routingOptimizer: RoutingOptimizer
   private isInitialized = false
   private isRunning = false
 
@@ -24,6 +26,7 @@ class Application {
     this.gameDetector = new GameDetector()
     this.configManager = new ConfigManager()
     this.optimizationEngine = new OptimizationEngine()
+    this.routingOptimizer = new RoutingOptimizer()
   }
 
   async initialize(): Promise<void> {
@@ -59,6 +62,9 @@ class Application {
       // Start monitoring services
       await this.networkMonitor.start()
       await this.gameDetector.start()
+      this.routingOptimizer.startRouteMonitoring().catch((err) => {
+        logger.error('Route monitoring failed to start', err)
+      })
 
       // Apply active optimization profile
       const activeProfile = this.configManager.getActiveProfile()
@@ -81,6 +87,7 @@ class Application {
       // Stop monitoring services
       this.networkMonitor.stop()
       this.gameDetector.stop()
+      await this.routingOptimizer.stopRouteMonitoring()
 
       // Revert optimizations
       await this.optimizationEngine.revertOptimizations()
@@ -148,6 +155,10 @@ class Application {
     return this.optimizationEngine
   }
 
+  getRoutingOptimizer(): RoutingOptimizer {
+    return this.routingOptimizer
+  }
+
   isInitialized_(): boolean {
     return this.isInitialized
   }
@@ -159,6 +170,7 @@ class Application {
   async shutdown(): Promise<void> {
     await this.stop()
     this.configManager.destroy()
+    this.routingOptimizer.destroy()
     logger.info('Application shutdown complete')
   }
 }

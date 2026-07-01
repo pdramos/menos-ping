@@ -6,17 +6,9 @@
 import type { DetectedGame, GameProfile } from '@types/index'
 import { GAME_DETECTION_CONFIG } from '@config/default'
 import { getLogger } from '@services/Logger'
+import { listRunningProcesses } from '@native/processes'
 
 const logger = getLogger('GameDetector')
-
-interface RunningProcess {
-  pid: number
-  name: string
-  path: string
-  memory: number
-  cpu: number
-  startTime: number
-}
 
 class GameDetector {
   private detectedGames: Map<number, DetectedGame> = new Map()
@@ -95,17 +87,11 @@ class GameDetector {
 
   private async scanProcesses(): Promise<void> {
     try {
-      // TODO: Implement actual process scanning
-      // This will be platform-specific:
-      // - Windows: WMI, Task Scheduler, or psapi.dll
-      // - Linux: /proc filesystem
-      // - macOS: NSRunningApplication
+      const processes = await listRunningProcesses()
 
-      // For now, simulate with mock data
-      const mockProcesses = this.getMockProcesses()
-
-      // Check for new games
-      for (const process of mockProcesses) {
+      // Check for new games. Match on basename (case-insensitive) so full
+      // paths and Wine/Proton invocations ("wine64 CS2.exe") both resolve.
+      for (const process of processes) {
         const executableName = process.name.toLowerCase()
         const profile = this.gameProfiles.get(executableName)
 
@@ -113,12 +99,15 @@ class GameDetector {
           const game: DetectedGame = {
             profile: {
               ...profile,
-              executable_path: process.path,
+              executable_path: process.execPath,
             },
             pid: process.pid,
-            memory_usage: process.memory,
-            cpu_usage: process.cpu,
-            start_time: process.startTime,
+            memory_usage: process.memoryBytes,
+            cpu_usage: process.cpuPercent,
+            // "start_time" reflects when Menos Ping first observed this PID,
+            // not the OS-level process creation time (not reliably available
+            // cross-platform from ps/tasklist without extra elevated calls).
+            start_time: Date.now(),
             network_activity: {
               sent_bytes: 0,
               received_bytes: 0,
@@ -129,11 +118,16 @@ class GameDetector {
           logger.info(`Game detected: ${profile.name} (PID: ${process.pid})`)
 
           this.observers.forEach((observer) => observer('game_detected', game))
+        } else if (profile && this.detectedGames.has(process.pid)) {
+          // Update live metrics for an already-detected game
+          const existing = this.detectedGames.get(process.pid)!
+          existing.memory_usage = process.memoryBytes
+          existing.cpu_usage = process.cpuPercent
         }
       }
 
       // Check for closed games
-      const runningPids = new Set(mockProcesses.map((p) => p.pid))
+      const runningPids = new Set(processes.map((p) => p.pid))
       for (const [pid, game] of this.detectedGames) {
         if (!runningPids.has(pid)) {
           this.detectedGames.delete(pid)
@@ -145,12 +139,6 @@ class GameDetector {
     } catch (error) {
       logger.error('Failed to scan processes', error)
     }
-  }
-
-  private getMockProcesses(): RunningProcess[] {
-    // TODO: Replace with actual process scanning
-    // For development, return empty array or mock data based on environment
-    return []
   }
 
   getDetectedGames(): DetectedGame[] {

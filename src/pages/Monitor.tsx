@@ -7,30 +7,32 @@ import Layout from '@components/Layout'
 import MetricCard from '@components/MetricCard'
 import LatencyChart from '@components/LatencyChart'
 import useNetworkStatus from '@hooks/useNetworkStatus'
-import { getApplication } from '@main/Application'
+import useDetectedGames from '@hooks/useDetectedGames'
 
 export const Monitor: React.FC = () => {
   const { quality } = useNetworkStatus()
   const [latencyHistory, setLatencyHistory] = useState<number[]>([])
   const [selectedGame, setSelectedGame] = useState<string | null>(null)
+  const detectedGames = useDetectedGames()
 
   // Update latency history
   useEffect(() => {
-    const app = getApplication()
-    const monitor = app.getNetworkMonitor()
+    let cancelled = false
 
     const updateHistory = () => {
-      const history = monitor.getLatencyHistory(300) // 5 minutes at 1s intervals
-      setLatencyHistory(history)
+      window.app.network.getLatencyHistory(300).then((history) => {
+        if (!cancelled) setLatencyHistory(history)
+      })
     }
 
     updateHistory()
     const interval = setInterval(updateHistory, 1000)
 
-    return () => clearInterval(interval)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
   }, [])
-
-  const detectedGames = getApplication().getGameDetector().getDetectedGames()
 
   return (
     <Layout
@@ -178,6 +180,9 @@ export const Monitor: React.FC = () => {
             </div>
           )}
 
+          {/* Route Issues (from real traceroute analysis) */}
+          <RouteIssuesPanel />
+
           {/* System Statistics */}
           <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
             <h3 className="text-lg font-bold mb-4">System Statistics</h3>
@@ -207,6 +212,52 @@ export const Monitor: React.FC = () => {
         </div>
       </div>
     </Layout>
+  )
+}
+
+const RouteIssuesPanel: React.FC = () => {
+  const [issues, setIssues] = useState<
+    { destination: string; issue: string; detail: string; measuredValue: number }[]
+  >([])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const refresh = () => {
+      window.app.routing.getIssues().then((result) => {
+        if (!cancelled) setIssues(result)
+      })
+    }
+
+    refresh()
+    const interval = setInterval(refresh, 30000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [])
+
+  return (
+    <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+      <h3 className="text-lg font-bold mb-2">Route Issues</h3>
+      <p className="text-xs text-gray-500 mb-4">
+        Detected from real traceroute measurements every 5 minutes.
+      </p>
+      {issues.length === 0 ? (
+        <p className="text-sm text-gray-500 italic">
+          No issues detected yet (or traceroute is unavailable on this system).
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {issues.map((issue, i) => (
+            <div key={i} className="p-3 bg-gray-700 rounded text-sm">
+              <span className="text-yellow-400 font-medium">{issue.issue.replace(/_/g, ' ')}</span>
+              <span className="text-gray-400"> — {issue.detail}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

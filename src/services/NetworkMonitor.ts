@@ -8,10 +8,10 @@ import type {
   JitterMetrics,
   PacketLossMetrics,
   ConnectionQuality,
-  RouteInfo,
 } from '@types/index'
 import { NETWORK_MONITOR_CONFIG } from '@config/default'
 import { getLogger } from '@services/Logger'
+import { probeTargets } from '@native/probe'
 
 const logger = getLogger('NetworkMonitor')
 
@@ -96,31 +96,35 @@ class NetworkMonitor {
     const targets = NETWORK_MONITOR_CONFIG.pingTargets
     const results: PingResult[] = []
 
-    for (const target of targets) {
-      try {
-        const start = performance.now()
-        // TODO: Implement actual ping (ICMP, TCP, or UDP)
-        // For now, simulate with random latency
-        const latency = Math.random() * 50 + 10 // 10-60ms
-        const end = performance.now()
+    let probeResults: Awaited<ReturnType<typeof probeTargets>>
+    try {
+      probeResults = await probeTargets(targets)
+    } catch (error) {
+      logger.error('Failed to probe network targets', error)
+      probeResults = targets.map((target) => ({
+        target,
+        latencyMs: 0,
+        success: false,
+        method: 'tcp' as const,
+      }))
+    }
 
-        results.push({
-          latency,
-          timestamp: Date.now(),
-          success: true,
-        })
+    for (const probe of probeResults) {
+      const result: PingResult = {
+        latency: probe.latencyMs,
+        timestamp: Date.now(),
+        success: probe.success,
+      }
+      results.push(result)
 
-        this.latencyHistory.push(latency)
-        if (this.latencyHistory.length > NETWORK_MONITOR_CONFIG.maxHistorySize) {
-          this.latencyHistory.shift()
-        }
-      } catch (error) {
-        logger.warn(`Ping to ${target} failed`, error)
-        results.push({
-          latency: 0,
-          timestamp: Date.now(),
-          success: false,
-        })
+      if (!probe.success) {
+        logger.warn(`Probe to ${probe.target} failed`)
+        continue
+      }
+
+      this.latencyHistory.push(probe.latencyMs)
+      if (this.latencyHistory.length > NETWORK_MONITOR_CONFIG.maxHistorySize) {
+        this.latencyHistory.shift()
       }
     }
 

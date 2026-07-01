@@ -1,32 +1,34 @@
 /**
- * Hook for monitoring network status
+ * Hook for monitoring network status.
+ * Talks to the main process exclusively via the window.app IPC bridge -
+ * NetworkMonitor itself runs in the main process and is never imported here.
  */
 
 import { useState, useEffect } from 'react'
 import type { ConnectionQuality } from '@types/index'
-import { getApplication } from '@main/Application'
 
 export function useNetworkStatus() {
   const [quality, setQuality] = useState<ConnectionQuality | null>(null)
   const [isMonitoring, setIsMonitoring] = useState(false)
 
   useEffect(() => {
-    const app = getApplication()
-    const monitor = app.getNetworkMonitor()
+    let cancelled = false
 
-    // Set initial value
-    const currentQuality = monitor.getConnectionQuality()
-    if (currentQuality) {
-      setQuality(currentQuality)
-    }
-    setIsMonitoring(monitor.isRunning())
+    window.app.network.getQuality().then((current) => {
+      if (!cancelled && current) setQuality(current)
+    })
 
-    // Subscribe to updates
-    const unsubscribe = monitor.onConnectionQualityChanged((newQuality) => {
+    window.app.getStatus().then((status) => {
+      if (!cancelled) setIsMonitoring(status.networkMonitoring)
+    })
+
+    const unsubscribe = window.app.network.onQualityChanged((newQuality) => {
       setQuality(newQuality)
+      setIsMonitoring(true)
     })
 
     return () => {
+      cancelled = true
       unsubscribe()
     }
   }, [])

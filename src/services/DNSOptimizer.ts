@@ -3,6 +3,7 @@
  * Handles DNS caching, server selection, and query optimization
  */
 
+import dns from 'dns'
 import type { DNSOptimizationSettings } from '@types/index'
 import { DEFAULT_DNS_OPTIMIZATION } from '@config/default'
 import { getLogger } from '@services/Logger'
@@ -122,6 +123,11 @@ class DNSOptimizer {
   }
 
   private async queryDNSServers(hostname: string): Promise<DNSQueryResult | null> {
+    // Hostname is already a literal IP address - nothing to resolve
+    if (dns.isIP(hostname)) {
+      return { hostname, ip: hostname, server: 'literal', latency: 0, success: true }
+    }
+
     const servers = this.settings.preferred_dns_servers.filter(
       (server) => !this.failedServers.has(server)
     )
@@ -133,10 +139,10 @@ class DNSOptimizer {
 
     for (const server of servers) {
       try {
-        // TODO: Implement actual DNS query
-        // For now, simulate with random latency
-        const latency = Math.random() * 100
-        const ip = this.simulateDNSResponse(hostname)
+        const start = process.hrtime.bigint()
+        const ip = await this.resolveViaServer(hostname, server)
+        const end = process.hrtime.bigint()
+        const latency = Number(end - start) / 1e6
 
         if (ip) {
           return {
@@ -156,17 +162,24 @@ class DNSOptimizer {
     return null
   }
 
-  private simulateDNSResponse(hostname: string): string | null {
-    // Mock DNS response
-    const responses: Record<string, string> = {
-      'google.com': '142.250.185.46',
-      'cloudflare.com': '104.16.132.229',
-      'github.com': '140.82.113.4',
-      '8.8.8.8': '8.8.8.8',
-      '1.1.1.1': '1.1.1.1',
-    }
+  /**
+   * Query a specific DNS server directly using Node's Resolver, so the
+   * configured preferred_dns_servers are actually the servers contacted
+   * rather than whatever the OS default resolver happens to use.
+   */
+  private resolveViaServer(hostname: string, server: string): Promise<string | null> {
+    return new Promise((resolve, reject) => {
+      const resolver = new dns.Resolver({ timeout: 3000 } as dns.ResolverOptions)
+      resolver.setServers([server])
 
-    return responses[hostname] || null
+      resolver.resolve4(hostname, (err, addresses) => {
+        if (err) {
+          reject(err)
+          return
+        }
+        resolve(addresses && addresses.length > 0 ? addresses[0] : null)
+      })
+    })
   }
 
   private markServerFailed(server: string): void {

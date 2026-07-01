@@ -1,17 +1,27 @@
 /**
  * Electron main process entry point
+ *
+ * This process owns the single Application instance and every service that
+ * touches the OS (network probes, DNS, process listing, registry/sysctl).
+ * The renderer (sandboxed, contextIsolation on, nodeIntegration off) never
+ * imports those services directly - it only talks to them through the IPC
+ * surface registered below, exposed via preload.ts.
  */
 
 import { app, BrowserWindow, ipcMain, Menu } from 'electron'
 import path from 'path'
 import { getApplication } from '@main/Application'
+import { getBackupManager } from '@services/BackupManager'
 import { getLogger } from '@services/Logger'
+import { probeTarget } from '@native/probe'
+import { runTraceroute } from '@native/traceroute'
+import { performDNSLookup } from '@native/dnsLookup'
 
 const logger = getLogger('ElectronMain')
 const isDev = process.env.NODE_ENV === 'development'
 
 let mainWindow: BrowserWindow | null = null
-let application: ReturnType<typeof getApplication> | null = null
+const application = getApplication()
 
 async function createWindow() {
   logger.info('Creating main window')
@@ -24,26 +34,17 @@ async function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      enableRemoteModule: false,
       nodeIntegration: false,
       sandbox: true,
     },
     icon: path.join(__dirname, '../../assets/icon.png'),
   })
 
-  // Load the app
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
     mainWindow.webContents.openDevTools()
   } else {
     mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'))
-  }
-
-  // Initialize application services
-  if (!application) {
-    application = getApplication()
-    await application.initialize()
-    await application.start()
   }
 
   mainWindow.on('closed', () => {
@@ -53,8 +54,26 @@ async function createWindow() {
   logger.info('Main window created')
 }
 
+function forwardToRenderer(channel: string, payload: unknown): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, payload)
+  }
+}
+
 async function handleAppReady() {
   logger.info('App ready')
+
+  await application.initialize()
+  await application.start()
+
+  // Forward real-time service events to the renderer as they happen.
+  application.getNetworkMonitor().onConnectionQualityChanged((quality) => {
+    forwardToRenderer('network:quality-changed', quality)
+  })
+  application.getGameDetector().onGameEvent((type, game) => {
+    forwardToRenderer('games:event', { type, game })
+  })
+
   await createWindow()
   createMenu()
 }
@@ -67,9 +86,7 @@ function createMenu() {
         {
           label: 'Exit',
           accelerator: 'CmdOrCtrl+Q',
-          click: () => {
-            app.quit()
-          },
+          click: () => app.quit(),
         },
       ],
     },
@@ -96,57 +113,37 @@ function createMenu() {
         { role: 'zoomOut' },
       ],
     },
-    {
-      label: 'Help',
-      submenu: [
-        {
-          label: 'About',
-          click: () => {
-            logger.info('About clicked')
-          },
-        },
-      ],
-    },
   ]
 
-  const menu = Menu.buildFromTemplate(template)
-  Menu.setApplicationMenu(menu)
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
-// App lifecycle
 app.on('ready', handleAppReady)
 
 app.on('window-all-closed', () => {
-  // On macOS, keep app running until user explicitly quits
   if (process.platform !== 'darwin') {
     app.quit()
   }
 })
 
 app.on('activate', () => {
-  // Re-create window when dock icon clicked on macOS
   if (mainWindow === null) {
-    createWindow().catch((err) => {
-      logger.error('Failed to create window on activate', err)
-    })
+    createWindow().catch((err) => logger.error('Failed to create window on activate', err))
   }
 })
 
 app.on('before-quit', async () => {
   logger.info('App quitting')
-  if (application) {
-    await application.shutdown()
-  }
+  await application.shutdown()
 })
 
-// IPC Handlers
-ipcMain.handle('app:get-version', () => {
-  return app.getVersion()
-})
+// ============================================================================
+// IPC Handlers - the entire renderer-facing API surface
+// ============================================================================
+
+ipcMain.handle('app:get-version', () => app.getVersion())
 
 ipcMain.handle('app:get-status', () => {
-  if (!application) return null
-
   const monitor = application.getNetworkMonitor()
   const detector = application.getGameDetector()
 
@@ -156,7 +153,112 @@ ipcMain.handle('app:get-status', () => {
     gameDetection: detector.isRunning(),
     detectedGames: detector.getDetectedGames().length,
     connectionQuality: monitor.getConnectionQuality(),
+    requiresElevation: application.getOptimizationEngine().requiresElevation(),
   }
+})
+
+// --- Network -------------------------------------------------------------
+
+ipcMain.handle('network:get-quality', () => {
+  return application.getNetworkMonitor().getConnectionQuality()
+})
+
+ipcMain.handle('network:get-latency-history', (_event, count?: number) => {
+  return application.getNetworkMonitor().getLatencyHistory(count)
+})
+
+// --- Games -----------------------------------------------------------------
+
+ipcMain.handle('games:get-detected', () => {
+  return application.getGameDetector().getDetectedGames()
+})
+
+// --- Config / Profiles ------------------------------------------------------
+
+ipcMain.handle('config:get-active-profile', () => {
+  return application.getConfigManager().getActiveProfile()
+})
+
+ipcMain.handle('config:get-all-profiles', () => {
+  return application.getConfigManager().getAllProfiles()
+})
+
+ipcMain.handle('config:set-active-profile', async (_event, profileId: string) => {
+  application.getConfigManager().setActiveProfile(profileId)
+  const profile = application.getConfigManager().getActiveProfile()
+  return application.getOptimizationEngine().applyOptimizations(profile)
+})
+
+ipcMain.handle('config:get-ui-settings', () => {
+  return application.getConfigManager().getUISettings()
+})
+
+ipcMain.handle('config:set-ui-settings', (_event, settings) => {
+  application.getConfigManager().setUISettings(settings)
+  return application.getConfigManager().getUISettings()
+})
+
+ipcMain.handle('config:get-telemetry-settings', () => {
+  return application.getConfigManager().getTelemetrySettings()
+})
+
+ipcMain.handle('config:set-telemetry-settings', (_event, settings) => {
+  application.getConfigManager().setTelemetrySettings(settings)
+  return application.getConfigManager().getTelemetrySettings()
+})
+
+// --- Optimization / Backup & Restore -----------------------------------------
+
+ipcMain.handle('optimization:get-current-profile', () => {
+  return application.getOptimizationEngine().getCurrentProfile()
+})
+
+ipcMain.handle('optimization:apply', async (_event, profileId: string) => {
+  const profile =
+    application.getConfigManager().getProfile(profileId) ||
+    application.getConfigManager().getActiveProfile()
+  return application.getOptimizationEngine().applyOptimizations(profile)
+})
+
+ipcMain.handle('optimization:revert', async (_event, backupId?: string) => {
+  return application.getOptimizationEngine().revertOptimizations(backupId)
+})
+
+ipcMain.handle('backups:list', async () => {
+  return getBackupManager().listBackups()
+})
+
+ipcMain.handle('backups:create', async (_event, label?: string) => {
+  return application.getOptimizationEngine().createManualBackup(label)
+})
+
+ipcMain.handle('backups:get', async (_event, id: string) => {
+  return getBackupManager().getBackup(id)
+})
+
+ipcMain.handle('backups:delete', async (_event, id: string) => {
+  await getBackupManager().deleteBackup(id)
+  return true
+})
+
+// --- Diagnostic Tools (Ping / Traceroute / DNS Lookup) ------------------------
+
+ipcMain.handle('tools:ping', async (_event, host: string) => {
+  return probeTarget(host)
+})
+
+ipcMain.handle('tools:traceroute', async (_event, host: string) => {
+  return runTraceroute(host)
+})
+
+ipcMain.handle('tools:dns-lookup', async (_event, domain: string) => {
+  return performDNSLookup(domain)
+})
+
+// --- Routing diagnostics ---------------------------------------------------
+
+ipcMain.handle('routing:get-issues', () => {
+  return application.getRoutingOptimizer().getIssues()
 })
 
 export {}
