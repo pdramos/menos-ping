@@ -4,13 +4,13 @@
 
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import Dashboard from '@pages/Dashboard'
+import AppContainer from '@components/AppContainer'
 import '@renderer/styles.css'
 
 const root = ReactDOM.createRoot(document.getElementById('app') || document.body)
 
 root.render(
   <React.StrictMode>
-    <Dashboard />
+    <AppContainer />
   </React.StrictMode>
 )
