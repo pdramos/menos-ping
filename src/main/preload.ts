@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('app', {
     getActiveProfile: () => ipcRenderer.invoke('config:get-active-profile'),
     getAllProfiles: () => ipcRenderer.invoke('config:get-all-profiles'),
     setActiveProfile: (profileId: string) => ipcRenderer.invoke('config:set-active-profile', profileId),
+    applyCustomProfile: (profile: unknown) => ipcRenderer.invoke('config:apply-custom-profile', profile),
     getUISettings: () => ipcRenderer.invoke('config:get-ui-settings'),
     setUISettings: (settings: unknown) => ipcRenderer.invoke('config:set-ui-settings', settings),
     getTelemetrySettings: () => ipcRenderer.invoke('config:get-telemetry-settings'),
@@ -62,6 +63,20 @@ contextBridge.exposeInMainWorld('app', {
 
   routing: {
     getIssues: () => ipcRenderer.invoke('routing:get-issues'),
+  },
+
+  windowControls: {
+    minimize: () => ipcRenderer.invoke('window:minimize'),
+    maximizeToggle: () => ipcRenderer.invoke('window:maximize-toggle'),
+    close: () => ipcRenderer.invoke('window:close'),
+    isMaximized: () => ipcRenderer.invoke('window:is-maximized'),
+    onMaximizeChanged: (callback: (isMaximized: boolean) => void) =>
+      subscribe('window:maximize-changed', callback),
+  },
+
+  logs: {
+    getRecent: (count?: number) => ipcRenderer.invoke('logs:get-recent', count),
+    openFolder: () => ipcRenderer.invoke('logs:open-folder'),
   },
 })
 

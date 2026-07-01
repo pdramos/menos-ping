@@ -7,31 +7,31 @@ import React from 'react'
 import useNotifications from '@hooks/useNotifications'
 import type { Notification } from '@services/NotificationManager'
 
-const getBackgroundColor = (type: Notification['type']): string => {
+const getBorderColor = (type: Notification['type']): string => {
   switch (type) {
     case 'success':
-      return 'bg-green-900 border-green-700'
+      return 'border-l-accent'
     case 'error':
-      return 'bg-red-900 border-red-700'
+      return 'border-l-danger'
     case 'warning':
-      return 'bg-yellow-900 border-yellow-700'
+      return 'border-l-warn'
     case 'info':
     default:
-      return 'bg-blue-900 border-blue-700'
+      return 'border-l-info'
   }
 }
 
 const getTextColor = (type: Notification['type']): string => {
   switch (type) {
     case 'success':
-      return 'text-green-100'
+      return 'text-accent'
     case 'error':
-      return 'text-red-100'
+      return 'text-danger'
     case 'warning':
-      return 'text-yellow-100'
+      return 'text-warn'
     case 'info':
     default:
-      return 'text-blue-100'
+      return 'text-info'
   }
 }
 
@@ -71,18 +71,21 @@ const NotificationItem: React.FC<{
       className={`
         fixed ${getPositionClass(notification.position)}
         max-w-sm w-full
-        border rounded-lg p-4 mb-2 shadow-lg
-        ${getBackgroundColor(notification.type)} ${getTextColor(notification.type)}
+        border border-border border-l-4 rounded-[10px] p-4 mb-2 shadow-panel
+        bg-panel-2 text-white
+        ${getBorderColor(notification.type)}
         animate-slide-in
         z-50
       `}
     >
       <div className="flex items-start gap-3">
-        <span className="text-lg font-bold flex-shrink-0">{getIcon(notification.type)}</span>
+        <span className={`text-lg font-bold flex-shrink-0 ${getTextColor(notification.type)}`}>
+          {getIcon(notification.type)}
+        </span>
 
         <div className="flex-1 min-w-0">
           <h4 className="font-bold text-sm mb-1">{notification.title}</h4>
-          <p className="text-sm opacity-90 break-words">{notification.message}</p>
+          <p className="text-sm text-muted break-words">{notification.message}</p>
 
           {notification.action && (
             <button

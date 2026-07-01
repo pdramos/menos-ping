@@ -1,53 +1,28 @@
 /**
- * Navigation utilities and router
+ * Navigation types shared between AppContainer and Sidebar
  */
 
-import React, { useState } from 'react'
-import Dashboard from '@pages/Dashboard'
-import Monitor from '@pages/Monitor'
-import Settings from '@pages/Settings'
-import Tools from '@pages/Tools'
+export type PageName =
+  | 'analysis'
+  | 'optimizations'
+  | 'profiles'
+  | 'backups'
+  | 'manual'
+  | 'logs'
+  | 'about'
 
-export type PageName = 'dashboard' | 'monitor' | 'settings' | 'tools'
-
-interface PageConfig {
-  name: PageName
+export interface NavItem {
+  id: PageName
   label: string
-  component: React.ComponentType
+  icon: string
 }
 
-export const pages: PageConfig[] = [
-  { name: 'dashboard', label: 'Dashboard', component: Dashboard },
-  { name: 'monitor', label: 'Monitor', component: Monitor },
-  { name: 'settings', label: 'Settings', component: Settings },
-  { name: 'tools', label: 'Tools', component: Tools },
+export const NAV_ITEMS: NavItem[] = [
+  { id: 'analysis', label: 'Análise', icon: '📊' },
+  { id: 'optimizations', label: 'Otimizações', icon: '⚡' },
+  { id: 'profiles', label: 'Perfis', icon: '🎛️' },
+  { id: 'backups', label: 'Backups', icon: '💾' },
+  { id: 'manual', label: 'Manuais', icon: '📌' },
+  { id: 'logs', label: 'Logs', icon: '📝' },
+  { id: 'about', label: 'Sobre', icon: '⚙️' },
 ]
-
-export const NavigationContext = React.createContext<{
-  currentPage: PageName
-  navigateTo: (page: PageName) => void
-}>({
-  currentPage: 'dashboard',
-  navigateTo: () => {},
-})
-
-export const NavigationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentPage, setCurrentPage] = useState<PageName>('dashboard')
-
-  return (
-    <NavigationContext.Provider value={{ currentPage, navigateTo: setCurrentPage }}>
-      {children}
-    </NavigationContext.Provider>
-  )
-}
-
-export function useNavigation() {
-  return React.useContext(NavigationContext)
-}
-
-export function getCurrentPageComponent(page: PageName) {
-  const pageConfig = pages.find((p) => p.name === page)
-  return pageConfig?.component || Dashboard
-}
-
-export default NavigationContext

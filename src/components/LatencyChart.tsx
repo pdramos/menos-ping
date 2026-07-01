@@ -42,13 +42,13 @@ export const LatencyChart: React.FC<LatencyChartProps> = ({
   const maxValue = data.length > 0 ? Math.max(...data) : 0
 
   return (
-    <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+    <div className="bg-panel rounded-2xl p-4 border border-border">
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-bold">Latency Over Time</h3>
-        <div className="text-sm text-gray-400">
-          <span className="mr-4">Avg: {avgValue}ms</span>
-          <span className="mr-4">Min: {minValue}ms</span>
-          <span>Max: {maxValue}ms</span>
+        <h3 className="text-[15px] font-bold">Latência ao Longo do Tempo</h3>
+        <div className="text-sm text-muted">
+          <span className="mr-4">Média: {avgValue}ms</span>
+          <span className="mr-4">Mín: {minValue}ms</span>
+          <span>Máx: {maxValue}ms</span>
         </div>
       </div>
 
@@ -56,7 +56,7 @@ export const LatencyChart: React.FC<LatencyChartProps> = ({
         {/* Background grid */}
         <defs>
           <pattern id="grid" width="40" height="30" patternUnits="userSpaceOnUse">
-            <path d={`M 40 0 L 0 0 0 30`} fill="none" stroke="#374151" strokeWidth="0.5" />
+            <path d={`M 40 0 L 0 0 0 30`} fill="none" stroke="#1e2a40" strokeWidth="0.5" />
           </pattern>
         </defs>
         <rect width={width} height={height} fill="url(#grid)" />
@@ -69,7 +69,7 @@ export const LatencyChart: React.FC<LatencyChartProps> = ({
               y1={padding.top + (chartHeight / 2) * i}
               x2={padding.left}
               y2={padding.top + (chartHeight / 2) * i}
-              stroke="#6b7280"
+              stroke="#2c3d5a"
               strokeWidth="1"
             />
             <text
@@ -77,7 +77,7 @@ export const LatencyChart: React.FC<LatencyChartProps> = ({
               y={padding.top + (chartHeight / 2) * i + 4}
               textAnchor="end"
               fontSize="12"
-              fill="#9ca3af"
+              fill="#8896ad"
             >
               {maxLatency - (maxLatency / 2) * i}ms
             </text>
@@ -90,7 +90,7 @@ export const LatencyChart: React.FC<LatencyChartProps> = ({
           y={padding.top}
           width={chartWidth}
           height={chartHeight}
-          fill="rgba(30, 58, 138, 0.05)"
+          fill="rgba(22, 214, 122, 0.04)"
         />
 
         {/* Zero line */}
@@ -99,13 +99,13 @@ export const LatencyChart: React.FC<LatencyChartProps> = ({
           y1={padding.top + chartHeight}
           x2={padding.left + chartWidth}
           y2={padding.top + chartHeight}
-          stroke="#4b5563"
+          stroke="#2c3d5a"
           strokeWidth="1"
           strokeDasharray="5,5"
         />
 
         {/* Path line */}
-        <path d={pathD} fill="none" stroke="#0ea5e9" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        <path d={pathD} fill="none" stroke="#16d67a" strokeWidth="2" vectorEffect="non-scaling-stroke" />
 
         {/* Area under line */}
         <path
@@ -116,8 +116,8 @@ export const LatencyChart: React.FC<LatencyChartProps> = ({
 
         <defs>
           <linearGradient id="gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.5" />
-            <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0" />
+            <stop offset="0%" stopColor="#16d67a" stopOpacity="0.5" />
+            <stop offset="100%" stopColor="#16d67a" stopOpacity="0" />
           </linearGradient>
         </defs>
 
@@ -128,7 +128,7 @@ export const LatencyChart: React.FC<LatencyChartProps> = ({
             cx={p.x}
             cy={p.y}
             r="3"
-            fill="#0ea5e9"
+            fill="#f5c542"
             opacity={i === points.length - 1 ? 1 : 0}
           />
         ))}

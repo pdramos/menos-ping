@@ -13,6 +13,7 @@ import type { ProbeResult } from '@native/probe'
 import type { TracerouteResult } from '@native/traceroute'
 import type { DNSLookupResult } from '@native/dnsLookup'
 import type { RouteIssue } from '@services/RoutingOptimizer'
+import type { LogEntry } from '@types/index'
 
 interface AppStatus {
   isRunning: boolean
@@ -21,6 +22,7 @@ interface AppStatus {
   detectedGames: number
   connectionQuality: ConnectionQuality | null
   requiresElevation: boolean
+  isElevated: boolean
 }
 
 interface UISettings {
@@ -64,6 +66,7 @@ declare global {
         getActiveProfile: () => Promise<OptimizationProfile>
         getAllProfiles: () => Promise<OptimizationProfile[]>
         setActiveProfile: (profileId: string) => Promise<ApplyResult>
+        applyCustomProfile: (profile: OptimizationProfile) => Promise<ApplyResult>
         getUISettings: () => Promise<UISettings>
         setUISettings: (settings: Partial<UISettings>) => Promise<UISettings>
         getTelemetrySettings: () => Promise<TelemetrySettings>
@@ -91,6 +94,19 @@ declare global {
 
       routing: {
         getIssues: () => Promise<RouteIssue[]>
+      }
+
+      windowControls: {
+        minimize: () => Promise<void>
+        maximizeToggle: () => Promise<boolean>
+        close: () => Promise<void>
+        isMaximized: () => Promise<boolean>
+        onMaximizeChanged: (callback: (isMaximized: boolean) => void) => () => void
+      }
+
+      logs: {
+        getRecent: (count?: number) => Promise<LogEntry[]>
+        openFolder: () => Promise<void>
       }
     }
     logger: {

@@ -146,6 +146,19 @@ class ConfigManager {
     return this.config.profiles.find((p) => p.id === profileId)
   }
 
+  /** Add or replace a profile (e.g. an ad-hoc one built from custom toggles), then activate it. */
+  upsertProfile(profile: OptimizationProfile): void {
+    const index = this.config.profiles.findIndex((p) => p.id === profile.id)
+    if (index !== -1) {
+      this.config.profiles[index] = profile
+    } else {
+      this.config.profiles.push(profile)
+    }
+    this.config.activeProfileId = profile.id
+    this.isDirty = true
+    logger.info(`Profile upserted and activated: ${profile.id}`)
+  }
+
   getAllProfiles(): OptimizationProfile[] {
     return [...this.config.profiles]
   }

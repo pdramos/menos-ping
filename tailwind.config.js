@@ -4,6 +4,19 @@ export default {
   theme: {
     extend: {
       colors: {
+        bg: '#0a0e17',
+        'bg-2': '#0f1522',
+        panel: '#131b2b',
+        'panel-2': '#182236',
+        border: '#223049',
+        muted: '#8896ad',
+        accent: '#16d67a',
+        'accent-2': '#0aa85e',
+        gold: '#f5c542',
+        'gold-2': '#d9a520',
+        danger: '#ff5c6c',
+        warn: '#ffb020',
+        info: '#4aa8ff',
         primary: {
           50: '#f0f9ff',
           500: '#0ea5e9',
@@ -17,9 +30,11 @@ export default {
       },
       fontFamily: {
         sans: [
+          '"Segoe UI"',
+          'Inter',
+          'system-ui',
           '-apple-system',
           'BlinkMacSystemFont',
-          '"Segoe UI"',
           'Roboto',
           'Oxygen',
           'Ubuntu',
@@ -29,6 +44,10 @@ export default {
           '"Helvetica Neue"',
           'sans-serif',
         ],
+        mono: ['"Cascadia Code"', 'Consolas', 'monospace'],
+      },
+      boxShadow: {
+        panel: '0 10px 40px rgba(0, 0, 0, 0.45)',
       },
     },
   },

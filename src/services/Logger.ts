@@ -2,10 +2,43 @@
  * Structured logging service
  */
 
+import fs from 'fs'
+import path from 'path'
 import type { LogEntry } from '@types/index'
 import { LOGGING_CONFIG } from '@config/default'
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
+
+function expandLogsDir(): string {
+  const dir = LOGGING_CONFIG.logsDir
+  if (dir.startsWith('~/')) {
+    const homeDir = process.env.HOME || process.env.USERPROFILE || ''
+    return dir.replace('~', homeDir)
+  }
+  return dir
+}
+
+const LOG_FILE_PATH = path.join(expandLogsDir(), 'menospingapp.log')
+
+/** Fire-and-forget append, rotating the file once it exceeds the configured size. */
+function appendToLogFile(line: string): void {
+  fs.promises
+    .mkdir(path.dirname(LOG_FILE_PATH), { recursive: true })
+    .then(async () => {
+      try {
+        const stat = await fs.promises.stat(LOG_FILE_PATH)
+        if (stat.size > LOGGING_CONFIG.maxFileSize) {
+          await fs.promises.rename(LOG_FILE_PATH, `${LOG_FILE_PATH}.1`)
+        }
+      } catch {
+        // File doesn't exist yet - nothing to rotate.
+      }
+      await fs.promises.appendFile(LOG_FILE_PATH, line)
+    })
+    .catch(() => {
+      // Logging must never crash the app it's instrumenting.
+    })
+}
 
 interface LoggerOptions {
   module: string
@@ -46,10 +79,9 @@ class Logger {
       this.logToConsole(entry)
     }
 
-    // TODO: Log to file if enabled
-    // if (this.enableFile) {
-    //   this.logToFile(entry)
-    // }
+    if (this.enableFile) {
+      appendToLogFile(`${JSON.stringify(entry)}\n`)
+    }
   }
 
   private logToConsole(entry: LogEntry): void {
@@ -110,6 +142,20 @@ export function createLogger(module: string): Logger {
 
 export function getLogger(module: string): Logger {
   return createLogger(module)
+}
+
+/** Merge every module's in-memory buffer into one timestamp-sorted list. */
+export function getAllLogs(count = 500): LogEntry[] {
+  const all: LogEntry[] = []
+  for (const logger of loggerInstances.values()) {
+    all.push(...logger.getLogs())
+  }
+  all.sort((a, b) => a.timestamp - b.timestamp)
+  return count ? all.slice(-count) : all
+}
+
+export function getLogsDirectory(): string {
+  return expandLogsDir()
 }
 
 export default Logger

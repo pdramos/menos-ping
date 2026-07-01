@@ -1,82 +1,43 @@
 /**
- * Main app container with navigation
+ * Main app container: custom title bar + sidebar navigation + current page.
  */
 
 import React, { useState } from 'react'
-import Dashboard from '@pages/Dashboard'
-import Monitor from '@pages/Monitor'
-import Settings from '@pages/Settings'
-import Tools from '@pages/Tools'
+import TitleBar from '@components/TitleBar'
+import Sidebar from '@components/Sidebar'
 import NotificationCenter from '@components/NotificationCenter'
-import useNotifications from '@hooks/useNotifications'
+import Analysis from '@pages/Analysis'
+import Optimizations from '@pages/Optimizations'
+import Profiles from '@pages/Profiles'
+import Backups from '@pages/Backups'
+import Manual from '@pages/Manual'
+import Logs from '@pages/Logs'
+import About from '@pages/About'
 import type { PageName } from '@utils/Navigation'
 
-const pages = {
-  dashboard: Dashboard,
-  monitor: Monitor,
-  settings: Settings,
-  tools: Tools,
-}
-
-const pageLabels: Record<PageName, string> = {
-  dashboard: 'Dashboard',
-  monitor: 'Monitor',
-  settings: 'Settings',
-  tools: 'Tools',
+const PAGES: Record<PageName, React.ComponentType<{ onNavigate?: (page: PageName) => void }>> = {
+  analysis: Analysis,
+  optimizations: Optimizations,
+  profiles: Profiles,
+  backups: Backups,
+  manual: Manual,
+  logs: Logs,
+  about: About,
 }
 
 export const AppContainer: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState<PageName>('dashboard')
-  const { unreadCount } = useNotifications()
-
-  const CurrentPage = pages[currentPage]
+  const [currentPage, setCurrentPage] = useState<PageName>('analysis')
+  const CurrentPage = PAGES[currentPage]
 
   return (
-    <div className="flex h-screen bg-gray-900 text-white">
-      {/* Sidebar Navigation */}
-      <div className="w-64 border-r border-gray-700 bg-gray-800 flex flex-col">
-        <div className="p-4 mb-8 border-b border-gray-700">
-          <h1 className="text-xl font-bold text-white">Menos Ping</h1>
-          <p className="text-xs text-gray-500">v0.1.0 • Gaming Optimizer</p>
-        </div>
-
-        <nav className="space-y-2 px-4 flex-1">
-          {Object.entries(pageLabels).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setCurrentPage(key as PageName)}
-              className={`w-full text-left px-4 py-2 rounded transition flex items-center justify-between ${
-                currentPage === key
-                  ? 'bg-blue-600 text-white font-medium'
-                  : 'text-gray-400 hover:bg-gray-700 hover:text-white'
-              }`}
-            >
-              <span>{label}</span>
-              {key === 'dashboard' && unreadCount > 0 && (
-                <span className="bg-red-600 text-white text-xs rounded-full px-2 py-0.5">
-                  {unreadCount}
-                </span>
-              )}
-            </button>
-          ))}
-        </nav>
-
-        <div className="border-t border-gray-700 p-4 space-y-2">
-          <button className="w-full text-left px-4 py-2 rounded text-sm text-gray-400 hover:bg-gray-700 hover:text-white transition">
-            Help
-          </button>
-          <button className="w-full text-left px-4 py-2 rounded text-sm text-gray-400 hover:bg-gray-700 hover:text-white transition">
-            About
-          </button>
-        </div>
+    <div className="flex flex-col h-screen w-screen bg-bg text-white overflow-hidden">
+      <TitleBar />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
+        <main className="flex-1 overflow-y-auto px-6 py-5 pb-10 relative">
+          <CurrentPage onNavigate={setCurrentPage} />
+        </main>
       </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <CurrentPage />
-      </div>
-
-      {/* Notification Center */}
       <NotificationCenter />
     </div>
   )
