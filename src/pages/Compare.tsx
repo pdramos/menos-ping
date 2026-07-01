@@ -19,36 +19,49 @@ function fmt(n: number, digits = 1): string {
   return n.toFixed(digits)
 }
 
-/** Delta for metrics where LOWER is better (latency, jitter, packet loss). */
-const DeltaLowerIsBetter: React.FC<{ before: number; after: number; unit: string; digits?: number }> = ({
-  before,
-  after,
-  unit,
-  digits = 1,
-}) => {
+/**
+ * Delta for metrics where LOWER is better (latency, jitter, packet loss).
+ * `noise` is the measurement noise band: if the change is smaller than this,
+ * it's reported as "within margin" (neutral) rather than a false win/loss -
+ * a couple of ms of variance on internet pings is normal and meaningless.
+ */
+const DeltaLowerIsBetter: React.FC<{
+  before: number
+  after: number
+  unit: string
+  digits?: number
+  noise?: number
+}> = ({ before, after, unit, digits = 1, noise = 0 }) => {
   const delta = after - before
-  const improved = delta < -0.01
-  const worsened = delta > 0.01
+  const significant = Math.abs(delta) > noise
+  const improved = significant && delta < 0
+  const worsened = significant && delta > 0
   const pct = before !== 0 ? (delta / before) * 100 : 0
   return (
     <span className={`text-xs font-bold ${improved ? 'text-accent' : worsened ? 'text-danger' : 'text-muted'}`}>
-      {improved ? '↓' : worsened ? '↑' : '→'} {delta > 0 ? '+' : ''}
+      {improved ? '↓' : worsened ? '↑' : '≈'} {delta > 0 ? '+' : ''}
       {fmt(delta, digits)}
-      {unit} ({pct > 0 ? '+' : ''}
-      {fmt(pct, 0)}%)
+      {unit}{' '}
+      {significant ? `(${pct > 0 ? '+' : ''}${fmt(pct, 0)}%)` : '(dentro da margem)'}
     </span>
   )
 }
 
 /** Delta for metrics where HIGHER is better (quality score). */
-const DeltaHigherIsBetter: React.FC<{ before: number; after: number }> = ({ before, after }) => {
+const DeltaHigherIsBetter: React.FC<{ before: number; after: number; noise?: number }> = ({
+  before,
+  after,
+  noise = 1,
+}) => {
   const delta = after - before
-  const improved = delta > 0.5
-  const worsened = delta < -0.5
+  const significant = Math.abs(delta) > noise
+  const improved = significant && delta > 0
+  const worsened = significant && delta < 0
   return (
     <span className={`text-xs font-bold ${improved ? 'text-accent' : worsened ? 'text-danger' : 'text-muted'}`}>
-      {improved ? '↑' : worsened ? '↓' : '→'} {delta > 0 ? '+' : ''}
+      {improved ? '↑' : worsened ? '↓' : '≈'} {delta > 0 ? '+' : ''}
       {fmt(delta, 0)}
+      {significant ? '' : ' (dentro da margem)'}
     </span>
   )
 }
@@ -60,6 +73,8 @@ const SnapshotCard: React.FC<{ title: string; snapshot: ComparisonSnapshot | nul
       <p className="text-sm text-muted italic">Sem amostras.</p>
     ) : (
       <dl className="grid grid-cols-[auto_1fr] gap-x-3.5 gap-y-2 text-[13px]">
+        <dt className="text-muted">Latência Mediana:</dt>
+        <dd className="text-right font-semibold text-white">{fmt(snapshot.medianLatencyMs)}ms</dd>
         <dt className="text-muted">Latência Média:</dt>
         <dd className="text-right font-semibold">{fmt(snapshot.avgLatencyMs)}ms</dd>
         <dt className="text-muted">Latência Mín/Máx:</dt>
@@ -175,15 +190,30 @@ export const Compare: React.FC = () => {
 
           {comparison.before && comparison.after && comparison.status === 'done' && (
             <div className="bg-panel border border-border rounded-2xl p-5">
-              <h3 className="text-[15px] font-bold mb-3.5">Diferença</h3>
+              <h3 className="text-[15px] font-bold mb-1">Diferença</h3>
+              <p className="text-xs text-muted mb-3.5">
+                Baseado na latência <b className="text-white">mediana</b> (imune a picos isolados).
+                A margem de erro considera o jitter medido - variações menores que isso são apenas
+                ruído normal da internet, não efeito da otimização.
+              </p>
               <dl className="grid grid-cols-[auto_1fr] gap-x-3.5 gap-y-2.5 text-[13px]">
-                <dt className="text-muted">Latência Média:</dt>
+                <dt className="text-muted">Latência Mediana:</dt>
                 <dd className="text-right">
-                  <DeltaLowerIsBetter before={comparison.before.avgLatencyMs} after={comparison.after.avgLatencyMs} unit="ms" />
+                  <DeltaLowerIsBetter
+                    before={comparison.before.medianLatencyMs}
+                    after={comparison.after.medianLatencyMs}
+                    unit="ms"
+                    noise={Math.max(comparison.before.avgJitterMs, comparison.after.avgJitterMs)}
+                  />
                 </dd>
                 <dt className="text-muted">Jitter:</dt>
                 <dd className="text-right">
-                  <DeltaLowerIsBetter before={comparison.before.avgJitterMs} after={comparison.after.avgJitterMs} unit="ms" />
+                  <DeltaLowerIsBetter
+                    before={comparison.before.avgJitterMs}
+                    after={comparison.after.avgJitterMs}
+                    unit="ms"
+                    noise={1}
+                  />
                 </dd>
                 <dt className="text-muted">Perda de Pacotes:</dt>
                 <dd className="text-right">
@@ -192,13 +222,38 @@ export const Compare: React.FC = () => {
                     after={comparison.after.packetLossPercent}
                     unit="%"
                     digits={2}
+                    noise={0.1}
                   />
                 </dd>
                 <dt className="text-muted">Pontuação de Qualidade:</dt>
                 <dd className="text-right">
-                  <DeltaHigherIsBetter before={comparison.before.score} after={comparison.after.score} />
+                  <DeltaHigherIsBetter before={comparison.before.score} after={comparison.after.score} noise={2} />
                 </dd>
               </dl>
+            </div>
+          )}
+
+          {comparison.status === 'done' && (
+            <div className="bg-info/[0.06] border border-info/30 rounded-2xl p-4 px-5">
+              <h4 className="text-info text-sm font-bold mb-2">ℹ️ Como interpretar</h4>
+              <ul className="flex flex-col gap-1.5 text-[12.5px] text-muted leading-relaxed">
+                <li>
+                  <b className="text-white">O ping "puro" (latência mínima) é definido pela distância física
+                  até ao servidor</b> e pela rota do teu ISP - nenhuma otimização de software reduz isso de
+                  forma mágica. Se a mediana ficou "dentro da margem", o teu caminho de rede já estava
+                  saudável.
+                </li>
+                <li>
+                  Estas otimizações ajudam sobretudo na <b className="text-white">consistência sob carga</b>
+                  {' '}(menos jitter/bufferbloat quando a ligação está ocupada) e no débito - efeitos que um
+                  teste de 12s com a rede ociosa quase não mostra.
+                </li>
+                <li>
+                  No Windows, alguns valores de registo (ex: TcpAckFrequency) só têm efeito total em
+                  <b className="text-white"> ligações novas ou após reiniciar</b> - por isso o "depois"
+                  imediato pode não refletir o ganho real.
+                </li>
+              </ul>
             </div>
           )}
 

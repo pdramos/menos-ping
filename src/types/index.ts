@@ -145,6 +145,9 @@ export interface OptimizationProfile {
 /** A real, measured aggregate over a sampling window - never simulated. */
 export interface ComparisonSnapshot {
   avgLatencyMs: number
+  /** Median is the headline metric: robust to the odd one-off ping spike
+   *  that would otherwise dominate a small-sample mean. */
+  medianLatencyMs: number
   minLatencyMs: number
   maxLatencyMs: number
   avgJitterMs: number

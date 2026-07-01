@@ -8,7 +8,6 @@
 
 import type {
   ComparisonSnapshot,
-  ConnectionQuality,
   OptimizationComparison,
   OptimizationProfile,
   SettingDiff,
@@ -29,6 +28,13 @@ function sleep(ms: number): Promise<void> {
 
 function average(values: number[]): number {
   return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
 class ComparisonRunner {
@@ -55,7 +61,7 @@ class ComparisonRunner {
     }
   }
 
-  async run(profile: OptimizationProfile, measureSeconds = 8): Promise<OptimizationComparison> {
+  async run(profile: OptimizationProfile, measureSeconds = 12): Promise<OptimizationComparison> {
     const comparison: OptimizationComparison = {
       id: `cmp-${Date.now()}`,
       profileName: profile.name,
@@ -81,9 +87,11 @@ class ComparisonRunner {
       const applyResult = await this.optimizationEngine.applyOptimizations(profile)
       comparison.backupId = applyResult.backupId
 
-      // Brief grace period so freshly-changed settings show up in the next
-      // real ping round before we start the "after" sampling window.
-      await sleep(2000)
+      // Grace period so freshly-changed settings take effect before the
+      // "after" window starts. (Note: some Windows TCP registry values only
+      // fully apply to NEW connections or after a reboot - see the honest
+      // note shown in the UI.)
+      await sleep(4000)
 
       comparison.status = 'measuring_after'
       this.emit()
@@ -121,18 +129,30 @@ class ComparisonRunner {
   }
 
   private async sampleQuality(seconds: number): Promise<ComparisonSnapshot> {
-    const samples: ConnectionQuality[] = []
+    // Collect one fresh reading per real ping round. We key off last_update
+    // so we never count the same round twice if our poll drifts against the
+    // monitor's 1s interval.
+    const latencies: number[] = []
+    const losses: number[] = []
+    const scores: number[] = []
+    let lastSeen = 0
     const start = Date.now()
 
     while (Date.now() - start < seconds * 1000) {
-      const quality = this.networkMonitor.getConnectionQuality()
-      if (quality) samples.push(quality)
-      await sleep(1000)
+      const q = this.networkMonitor.getConnectionQuality()
+      if (q && q.last_update !== lastSeen) {
+        lastSeen = q.last_update
+        latencies.push(q.latency.average)
+        losses.push(q.packet_loss.percentage)
+        scores.push(q.score)
+      }
+      await sleep(500)
     }
 
-    if (samples.length === 0) {
+    if (latencies.length === 0) {
       return {
         avgLatencyMs: 0,
+        medianLatencyMs: 0,
         minLatencyMs: 0,
         maxLatencyMs: 0,
         avgJitterMs: 0,
@@ -142,14 +162,24 @@ class ComparisonRunner {
       }
     }
 
+    // Windowed jitter: mean absolute difference between CONSECUTIVE samples,
+    // computed only over this measurement window - not the monitor's long
+    // sliding history, which would carry over noise from before the test.
+    let jitterSum = 0
+    for (let i = 1; i < latencies.length; i++) {
+      jitterSum += Math.abs(latencies[i] - latencies[i - 1])
+    }
+    const windowedJitter = latencies.length > 1 ? jitterSum / (latencies.length - 1) : 0
+
     return {
-      avgLatencyMs: average(samples.map((s) => s.latency.average)),
-      minLatencyMs: Math.min(...samples.map((s) => s.latency.min)),
-      maxLatencyMs: Math.max(...samples.map((s) => s.latency.max)),
-      avgJitterMs: average(samples.map((s) => s.jitter.value)),
-      packetLossPercent: average(samples.map((s) => s.packet_loss.percentage)),
-      score: average(samples.map((s) => s.score)),
-      sampleCount: samples.length,
+      avgLatencyMs: average(latencies),
+      medianLatencyMs: median(latencies),
+      minLatencyMs: Math.min(...latencies),
+      maxLatencyMs: Math.max(...latencies),
+      avgJitterMs: windowedJitter,
+      packetLossPercent: average(losses),
+      score: average(scores),
+      sampleCount: latencies.length,
     }
   }
 }
