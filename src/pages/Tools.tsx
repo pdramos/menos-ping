@@ -290,22 +290,7 @@ const Sidebar: React.FC<{
   <div className="p-4 flex flex-col h-full">
     <h2 className="text-lg font-bold mb-4">Tools</h2>
 
-    <nav className="space-y-2 mb-6">
-      {['Dashboard', 'Monitor', 'Settings', 'Tools'].map((item) => (
-        <button
-          key={item}
-          className={`w-full text-left px-4 py-2 rounded transition ${
-            item === 'Tools'
-              ? 'bg-blue-600 text-white'
-              : 'text-gray-400 hover:bg-gray-700 hover:text-white'
-          }`}
-        >
-          {item}
-        </button>
-      ))}
-    </nav>
-
-    <div className="border-t border-gray-700 pt-4 space-y-2">
+    <div className="space-y-2">
       {[
         { id: 'ping', label: 'Ping Tool' },
         { id: 'traceroute', label: 'Traceroute' },

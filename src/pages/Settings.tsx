@@ -56,7 +56,7 @@ export const Settings: React.FC = () => {
   }
 
   return (
-    <Layout sidebar={<Sidebar />} header={<Header />}>
+    <Layout header={<Header />}>
       <div className="flex-1 overflow-auto">
         <div className="max-w-4xl mx-auto p-6 space-y-6">
           {requiresElevation && (
@@ -316,27 +316,6 @@ const SettingToggle: React.FC<{
         } mt-1`}
       />
     </button>
-  </div>
-)
-
-const Sidebar: React.FC = () => (
-  <div className="p-4 flex flex-col h-full">
-    <h2 className="text-lg font-bold mb-4">Settings</h2>
-
-    <nav className="space-y-2 flex-1">
-      {['Dashboard', 'Monitor', 'Settings', 'Tools'].map((item) => (
-        <button
-          key={item}
-          className={`w-full text-left px-4 py-2 rounded transition ${
-            item === 'Settings'
-              ? 'bg-blue-600 text-white'
-              : 'text-gray-400 hover:bg-gray-700 hover:text-white'
-          }`}
-        >
-          {item}
-        </button>
-      ))}
-    </nav>
   </div>
 )
 

@@ -35,10 +35,7 @@ export const Monitor: React.FC = () => {
   }, [])
 
   return (
-    <Layout
-      sidebar={<Sidebar selectedGame={selectedGame} onChange={setSelectedGame} />}
-      header={<Header />}
-    >
+    <Layout header={<Header />}>
       <div className="flex-1 overflow-auto">
         <div className="p-6 space-y-6">
           {/* Main chart */}
@@ -257,38 +254,6 @@ const RouteIssuesPanel: React.FC = () => {
           ))}
         </div>
       )}
-    </div>
-  )
-}
-
-const Sidebar: React.FC<{
-  selectedGame: string | null
-  onChange: (game: string | null) => void
-}> = ({ selectedGame, onChange }) => {
-  return (
-    <div className="p-4 flex flex-col h-full">
-      <h2 className="text-lg font-bold mb-4">Monitor</h2>
-
-      <nav className="space-y-2 flex-1">
-        {['Dashboard', 'Monitor', 'Settings', 'Tools'].map((item) => (
-          <button
-            key={item}
-            className={`w-full text-left px-4 py-2 rounded transition ${
-              item === 'Monitor'
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-400 hover:bg-gray-700 hover:text-white'
-            }`}
-          >
-            {item}
-          </button>
-        ))}
-      </nav>
-
-      <div className="border-t border-gray-700 pt-4">
-        <button className="w-full text-left px-4 py-2 rounded text-gray-400 hover:bg-gray-700 hover:text-white transition text-sm">
-          Refresh
-        </button>
-      </div>
     </div>
   )
 }

@@ -80,10 +80,7 @@ export const Dashboard: React.FC = () => {
             : 'bg-red-900'
 
   return (
-    <Layout
-      sidebar={<Sidebar />}
-      header={<Header />}
-    >
+    <Layout header={<Header />}>
       <div className="flex-1 overflow-auto">
         <div className="p-6 space-y-6">
           {/* Connection Quality Overview */}
@@ -183,41 +180,6 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
     </Layout>
-  )
-}
-
-const Sidebar: React.FC = () => {
-  return (
-    <div className="p-4 flex flex-col h-full">
-      <div className="mb-8">
-        <h1 className="text-xl font-bold text-white">Menos Ping</h1>
-        <p className="text-xs text-gray-500">Gaming Latency Optimizer</p>
-      </div>
-
-      <nav className="space-y-2 flex-1">
-        {['Dashboard', 'Monitor', 'Settings', 'Tools'].map((item) => (
-          <button
-            key={item}
-            className={`w-full text-left px-4 py-2 rounded transition ${
-              item === 'Dashboard'
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-400 hover:bg-gray-700 hover:text-white'
-            }`}
-          >
-            {item}
-          </button>
-        ))}
-      </nav>
-
-      <div className="border-t border-gray-700 pt-4">
-        <button className="w-full text-left px-4 py-2 rounded text-gray-400 hover:bg-gray-700 hover:text-white transition">
-          About
-        </button>
-        <button className="w-full text-left px-4 py-2 rounded text-gray-400 hover:bg-gray-700 hover:text-white transition">
-          Settings
-        </button>
-      </div>
-    </div>
   )
 }
 
