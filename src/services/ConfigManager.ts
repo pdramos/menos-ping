@@ -6,7 +6,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { OptimizationProfile, GameProfile } from '@types/index'
-import { DEFAULT_OPTIMIZATION_PROFILE } from '@config/default'
+import { DEFAULT_OPTIMIZATION_PROFILE, DEFAULT_OPTIMIZATION_PROFILES } from '@config/default'
 import { getLogger } from '@services/Logger'
 
 const logger = getLogger('ConfigManager')
@@ -62,7 +62,7 @@ class ConfigManager {
     return {
       version: '0.1.0',
       activeProfileId: DEFAULT_OPTIMIZATION_PROFILE.id,
-      profiles: [DEFAULT_OPTIMIZATION_PROFILE],
+      profiles: [...DEFAULT_OPTIMIZATION_PROFILES],
       gameProfiles: [],
       ui: {
         theme: 'dark',
@@ -96,6 +96,16 @@ class ConfigManager {
         ...loaded,
         ui: { ...this.getDefaultConfig().ui, ...loaded.ui },
         telemetry: { ...this.getDefaultConfig().telemetry, ...loaded.telemetry },
+      }
+
+      // Bring in any built-in profiles introduced since this config was last
+      // saved (e.g. a new app version), without touching profiles the user
+      // already has (including their own edits to existing built-ins).
+      for (const profile of DEFAULT_OPTIMIZATION_PROFILES) {
+        if (!this.config.profiles.some((p) => p.id === profile.id)) {
+          this.config.profiles.push(profile)
+          this.isDirty = true
+        }
       }
 
       logger.info(`Config loaded from ${this.configPath}`)

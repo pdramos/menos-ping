@@ -122,6 +122,93 @@ export const DEFAULT_OPTIMIZATION_PROFILE: OptimizationProfile = {
 }
 
 // ============================================================================
+// Competitive Mode - minimizes buffering to cut latency/bufferbloat for
+// twitch-reflex games (small buffers + TCP_NODELAY + fast DNS, no caching
+// tradeoffs that add staleness risk).
+// ============================================================================
+
+export const COMPETITIVE_OPTIMIZATION_PROFILE: OptimizationProfile = {
+  id: 'competitive',
+  name: 'Competitive Mode',
+  description: 'Minimizes latency for fast-paced, twitch-reflex games (smaller buffers, fastest DNS)',
+  enabled: true,
+  network_settings: {
+    tcp_buffer_size: 262144, // 256KB - smaller buffers reduce bufferbloat-induced latency
+    udp_buffer_size: 262144,
+    tcp_nodelay: true,
+    enable_congestion_control: true,
+    congestion_algorithm: 'bbr',
+    mtu_size: 1500,
+    window_scaling: true,
+    selective_ack: true,
+  },
+  dns_settings: {
+    enable_caching: true,
+    cache_size: 5000,
+    cache_ttl: 60, // shorter TTL keeps entries fresh over raw hit rate
+    preferred_dns_servers: ['1.1.1.1', '1.0.0.1'], // Cloudflare - typically lowest resolve latency
+    enable_dns_over_https: true,
+    validate_responses: true,
+    failover_enabled: true,
+  },
+  routing_settings: {
+    enable_auto_optimization: true,
+    use_best_route: true,
+    analyze_isp_peering: true,
+    enable_connection_pooling: false, // pooling favors throughput reuse, not lowest first-packet latency
+    timeout_seconds: 10,
+  },
+  apply_to_all_games: true,
+  target_games: [],
+}
+
+// ============================================================================
+// Streaming Mode - favors throughput and stability over minimal latency,
+// for downloads, streaming, or bulk transfers alongside gaming.
+// ============================================================================
+
+export const STREAMING_OPTIMIZATION_PROFILE: OptimizationProfile = {
+  id: 'streaming',
+  name: 'Streaming Mode',
+  description: 'Maximizes throughput and connection stability (larger buffers, longer DNS cache)',
+  enabled: true,
+  network_settings: {
+    tcp_buffer_size: 4194304, // 4MB - larger buffers sustain higher throughput
+    udp_buffer_size: 2097152,
+    tcp_nodelay: false, // batches small writes, favors bulk throughput over per-packet latency
+    enable_congestion_control: true,
+    congestion_algorithm: 'cubic',
+    mtu_size: 1500,
+    window_scaling: true,
+    selective_ack: true,
+  },
+  dns_settings: {
+    enable_caching: true,
+    cache_size: 20000,
+    cache_ttl: 600,
+    preferred_dns_servers: ['8.8.8.8', '8.8.4.4', '1.1.1.1'],
+    enable_dns_over_https: true,
+    validate_responses: true,
+    failover_enabled: true,
+  },
+  routing_settings: {
+    enable_auto_optimization: true,
+    use_best_route: true,
+    analyze_isp_peering: true,
+    enable_connection_pooling: true,
+    timeout_seconds: 60,
+  },
+  apply_to_all_games: true,
+  target_games: [],
+}
+
+export const DEFAULT_OPTIMIZATION_PROFILES: OptimizationProfile[] = [
+  DEFAULT_OPTIMIZATION_PROFILE,
+  COMPETITIVE_OPTIMIZATION_PROFILE,
+  STREAMING_OPTIMIZATION_PROFILE,
+]
+
+// ============================================================================
 // Game Detection Configuration
 // ============================================================================
 
