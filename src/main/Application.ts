@@ -8,6 +8,7 @@ import GameDetector from '@services/GameDetector'
 import ConfigManager from '@services/ConfigManager'
 import OptimizationEngine from '@services/OptimizationEngine'
 import RoutingOptimizer from '@services/RoutingOptimizer'
+import ComparisonRunner from '@services/ComparisonRunner'
 import { getLogger } from '@services/Logger'
 
 const logger = getLogger('Application')
@@ -18,6 +19,7 @@ class Application {
   private configManager: ConfigManager
   private optimizationEngine: OptimizationEngine
   private routingOptimizer: RoutingOptimizer
+  private comparisonRunner: ComparisonRunner
   private isInitialized = false
   private isRunning = false
 
@@ -27,6 +29,7 @@ class Application {
     this.configManager = new ConfigManager()
     this.optimizationEngine = new OptimizationEngine()
     this.routingOptimizer = new RoutingOptimizer()
+    this.comparisonRunner = new ComparisonRunner(this.networkMonitor, this.optimizationEngine)
   }
 
   async initialize(): Promise<void> {
@@ -157,6 +160,10 @@ class Application {
 
   getRoutingOptimizer(): RoutingOptimizer {
     return this.routingOptimizer
+  }
+
+  getComparisonRunner(): ComparisonRunner {
+    return this.comparisonRunner
   }
 
   isInitialized_(): boolean {

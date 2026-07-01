@@ -8,6 +8,7 @@ import Sidebar from '@components/Sidebar'
 import NotificationCenter from '@components/NotificationCenter'
 import Analysis from '@pages/Analysis'
 import Optimizations from '@pages/Optimizations'
+import Compare from '@pages/Compare'
 import Profiles from '@pages/Profiles'
 import Backups from '@pages/Backups'
 import Manual from '@pages/Manual'
@@ -18,6 +19,7 @@ import type { PageName } from '@utils/Navigation'
 const PAGES: Record<PageName, React.ComponentType<{ onNavigate?: (page: PageName) => void }>> = {
   analysis: Analysis,
   optimizations: Optimizations,
+  compare: Compare,
   profiles: Profiles,
   backups: Backups,
   manual: Manual,

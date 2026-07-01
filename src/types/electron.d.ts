@@ -7,6 +7,7 @@ import type {
   ConnectionQuality,
   DetectedGame,
   OptimizationProfile,
+  OptimizationComparison,
 } from '@types/index'
 import type { BackupEntry, BackupMeta } from '@services/BackupManager'
 import type { ProbeResult } from '@native/probe'
@@ -107,6 +108,12 @@ declare global {
       logs: {
         getRecent: (count?: number) => Promise<LogEntry[]>
         openFolder: () => Promise<void>
+      }
+
+      comparison: {
+        run: (profile: OptimizationProfile) => Promise<OptimizationComparison>
+        getLatest: () => Promise<OptimizationComparison | null>
+        onStatusChanged: (callback: (comparison: OptimizationComparison) => void) => () => void
       }
     }
     logger: {

@@ -91,6 +91,9 @@ async function handleAppReady() {
   application.getGameDetector().onGameEvent((type, game) => {
     forwardToRenderer('games:event', { type, game })
   })
+  application.getComparisonRunner().onStatusChanged((comparison) => {
+    forwardToRenderer('comparison:status-changed', comparison)
+  })
 
   await createWindow()
   createMenu()
@@ -307,6 +310,16 @@ ipcMain.handle('tools:dns-lookup', async (_event, domain: string) => {
 
 ipcMain.handle('routing:get-issues', () => {
   return application.getRoutingOptimizer().getIssues()
+})
+
+// --- Before/after optimization comparison -----------------------------------
+
+ipcMain.handle('comparison:run', async (_event, profile: OptimizationProfile) => {
+  return application.getComparisonRunner().run(profile)
+})
+
+ipcMain.handle('comparison:get-latest', () => {
+  return application.getComparisonRunner().getCurrent()
 })
 
 // --- Logs -------------------------------------------------------------------

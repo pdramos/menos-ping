@@ -139,6 +139,49 @@ export interface OptimizationProfile {
 }
 
 // ============================================================================
+// Before/After Optimization Comparison
+// ============================================================================
+
+/** A real, measured aggregate over a sampling window - never simulated. */
+export interface ComparisonSnapshot {
+  avgLatencyMs: number
+  minLatencyMs: number
+  maxLatencyMs: number
+  avgJitterMs: number
+  packetLossPercent: number
+  score: number
+  sampleCount: number
+}
+
+/** One real low-level setting (registry value / sysctl key) before vs after. */
+export interface SettingDiff {
+  key: string
+  before: string | null
+  after: string | null
+  changed: boolean
+}
+
+export type ComparisonStatus =
+  | 'measuring_before'
+  | 'applying'
+  | 'measuring_after'
+  | 'done'
+  | 'failed'
+
+export interface OptimizationComparison {
+  id: string
+  profileName: string
+  startedAt: number
+  completedAt: number | null
+  status: ComparisonStatus
+  before: ComparisonSnapshot | null
+  after: ComparisonSnapshot | null
+  settingsDiff: SettingDiff[]
+  backupId: string | null
+  error?: string
+}
+
+// ============================================================================
 // System Information
 // ============================================================================
 

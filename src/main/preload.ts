@@ -78,6 +78,13 @@ contextBridge.exposeInMainWorld('app', {
     getRecent: (count?: number) => ipcRenderer.invoke('logs:get-recent', count),
     openFolder: () => ipcRenderer.invoke('logs:open-folder'),
   },
+
+  comparison: {
+    run: (profile: unknown) => ipcRenderer.invoke('comparison:run', profile),
+    getLatest: () => ipcRenderer.invoke('comparison:get-latest'),
+    onStatusChanged: (callback: (comparison: unknown) => void) =>
+      subscribe('comparison:status-changed', callback),
+  },
 })
 
 contextBridge.exposeInMainWorld('logger', {

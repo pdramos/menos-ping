@@ -529,6 +529,11 @@ class OptimizationEngine {
     }
   }
 
+  /** Read the real, current low-level network settings without changing anything. */
+  async getCurrentRealSettings(): Promise<Record<string, string>> {
+    return this.optimizer.captureSettings()
+  }
+
   /** Capture and store the current real system state without changing anything. */
   async createManualBackup(label?: string): Promise<string> {
     const currentSettings = await this.optimizer.captureSettings()
