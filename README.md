@@ -1,119 +1,68 @@
-# Menos Ping - Professional Gaming Latency Optimizer
+# Menos Ping
 
-A world-class desktop application designed to optimize network connections for online gaming, reducing latency, jitter, packet loss, and network-related performance degradation.
+Otimizador de latência para jogos online. Aplicação de desktop (Windows) que deteta o jogo em
+execução, mede a rota até ao servidor, aplica ajustes de rede e mostra o antes e o depois.
 
-## Project Status
+**Estado:** funcional, ainda sem instalador publicado. O código abaixo está escrito e a correr
+em desenvolvimento; o que falta é empacotamento e testes em máquinas que não a minha.
 
-🔄 **Research Phase**: Deep technical research in progress across:
-- Network optimization techniques
-- Operating system tuning
-- Existing solutions analysis
-- Academic research
-- Industry standards
-- Monitoring and diagnostic tools
-- Security considerations
+---
 
-## Architecture Overview
+## O que já faz
 
-### Core Components (Planned)
+| Módulo | O que resolve |
+|---|---|
+| `GameDetector` | descobre que jogo está a correr e a que servidor está ligado |
+| `GameRouteAnalyzer` | traça a rota até esse servidor e identifica onde o atraso aparece |
+| `NetworkMonitor` | mede latência, variação e perda de pacotes de forma contínua |
+| `RoutingOptimizer` · `DNSOptimizer` | aplicam os ajustes de encaminhamento e de resolução de nomes |
+| `ComparisonRunner` | corre a mesma medição antes e depois, para o ganho ser um número e não uma sensação |
+| `BackupManager` | guarda o estado anterior de tudo o que é alterado, e sabe repô-lo |
+| `OptimizationEngine` | orquestra o que é aplicado, em que ordem, e o que fazer se um passo falhar |
 
-1. **Network Monitor & Analyzer**
-   - Real-time latency measurement
-   - Jitter detection
-   - Packet loss monitoring
-   - Network stability analysis
-   - Route tracing and diagnosis
+Nove ecrãs: análise, otimizações, rotas, comparação, perfis, cópias de segurança, registo,
+manual e sobre.
 
-2. **OS-Level Optimization Engine**
-   - TCP/UDP stack tuning
-   - Buffer optimization
-   - Network priority management
-   - Driver optimization
-   - System resource allocation
+## Porque é que o `BackupManager` existe
 
-3. **DNS Optimization**
-   - DNS caching and acceleration
-   - Server selection
-   - Query optimization
-   - Failover mechanisms
+Uma ferramenta que altera a configuração de rede de alguém e não sabe voltar atrás não é uma
+otimização — é um risco. Cada alteração é registada com o valor anterior antes de ser aplicada,
+e qualquer uma pode ser revertida individualmente ou toda de uma vez.
 
-4. **Routing Optimization**
-   - Intelligent packet routing
-   - ISP peering analysis
-   - Route optimization
-   - Connection quality improvement
+O mesmo princípio vale para o `ComparisonRunner`: sem medir os dois lados, "melhorou" é opinião.
 
-5. **Gaming-Aware Features**
-   - Game detection and profiling
-   - Protocol-specific optimization
-   - Connection pooling
-   - Predictive optimization
+## Sondas nativas, sem binários externos
 
-6. **UI Dashboard**
-   - Real-time metrics visualization
-   - Performance monitoring
-   - Configuration management
-   - Diagnostic tools
+`traceroute`, resolução de DNS, tabela de conexões e lista de processos são implementados
+diretamente em `src/native/`, em vez de invocar utilitários do sistema e interpretar a saída
+em texto. Sai mais trabalho, mas evita depender do formato de saída de ferramentas que mudam
+entre versões do Windows e entre idiomas do sistema.
 
-7. **Update & Telemetry System**
-   - Secure automatic updates
-   - Privacy-respecting telemetry
-   - Performance data collection
-   - Crash reporting
+## Stack
 
-## Technology Stack (To Be Finalized)
+Electron · React · TypeScript · Vite · Tailwind — ESLint e Prettier configurados,
+testes em `src/services/__tests__`.
 
-- **Frontend**: React + TypeScript
-- **Desktop**: Electron
-- **Backend**: Node.js + native modules
-- **Network**: libuv, node-gyp for native networking
-- **UI**: Tailwind CSS or similar
-- **Testing**: Vitest + Playwright
-
-## Development Roadmap
-
-1. **Research & Design** (In Progress)
-2. **Core Network Module**
-3. **OS Optimization Engine**
-4. **UI Framework**
-5. **Integration & Testing**
-6. **Performance Optimization**
-7. **Security Review**
-8. **Release Preparation**
-
-## Building & Development
+## Correr localmente
 
 ```bash
-# Install dependencies
 npm install
-
-# Development
-npm run dev
-
-# Build
-npm run build
-
-# Test
-npm run test
+npm run dev      # Vite + Electron em modo de desenvolvimento
+npm run build    # empacota
+npm test         # testes dos serviços
 ```
 
-## Contributing
+## O que falta
 
-This is a professional project targeting production use. All contributions must meet high standards for:
-- Code quality and clarity
-- Performance and efficiency
-- Security
-- Compatibility
-- User experience
+- Instalador assinado e publicado (o `electron-builder` já está configurado)
+- Cobertura de testes além de `DNSOptimizer` e `Logger`
+- Validação em máquinas e ligações diferentes da minha
 
-## Security & Privacy
+## Segurança
 
-- No tracking of user data without consent
-- Transparent operations
-- Regular security audits
-- Responsible disclosure of vulnerabilities
-- Open source components with proper licensing
+Nenhum ajuste toca em ficheiros do jogo nem em memória de processos — só em definições de rede
+do sistema operativo, todas reversíveis. Nada é enviado para fora da máquina.
 
-## License
+---
 
-MIT - See LICENSE file for details
+MIT · [Pedro Ramos](https://github.com/pepevapovapo)

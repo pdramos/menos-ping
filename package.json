@@ -1,8 +1,8 @@
 {
   "name": "menos-ping",
   "version": "0.1.0",
-  "description": "Professional gaming latency optimization application",
-  "author": "Gaming Network Optimization Team",
+  "description": "Otimizador de latencia para jogos online — deteta o jogo, traca a rota, aplica ajustes reversiveis e compara o antes e o depois",
+  "author": "Pedro Ramos",
   "license": "MIT",
   "main": "dist/main/electron-main.js",
   "scripts": {
