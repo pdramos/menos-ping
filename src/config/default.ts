@@ -17,7 +17,7 @@ export const APP_CONFIG = {
   name: 'Menos Ping',
   version: '0.1.0',
   author: 'Gaming Network Optimization Team',
-  repository: 'https://github.com/pepevapovapo/menos-ping',
+  repository: 'https://github.com/pdramos/menos-ping',
   supportEmail: 'support@menospingapp.com',
   checkForUpdatesOnStartup: true,
   updateCheckInterval: 3600000, // 1 hour

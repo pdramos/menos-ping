@@ -65,4 +65,4 @@ do sistema operativo, todas reversíveis. Nada é enviado para fora da máquina.
 
 ---
 
-MIT · [Pedro Ramos](https://github.com/pepevapovapo)
+MIT · [Pedro Ramos](https://github.com/pdramos)
